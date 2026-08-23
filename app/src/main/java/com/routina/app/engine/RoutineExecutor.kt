@@ -156,17 +156,17 @@ object RoutineExecutor {
                 is Action.OpenApp -> doOpenApp(context, routine, index, resolved, canLaunchActivity)
                 is Action.OpenUrl -> doOpenUrl(context, routine, index, resolved, canLaunchActivity)
                 is Action.Share -> doShare(context, routine, index, resolved, canLaunchActivity)
-                is Action.MediaVolume -> doMediaVolume(context, resolved)
+                is Action.MediaVolume -> doMediaVolume(context, resolved, ctx)
                 is Action.RingerMode -> doRingerMode(context, resolved)
                 is Action.Bluetooth -> doBluetooth(context, routine, index, resolved)
                 is Action.Flashlight -> doFlashlight(context, resolved)
                 is Action.Speak -> doSpeak(context, resolved)
-                is Action.Vibrate -> doVibrate(context, resolved)
+                is Action.Vibrate -> doVibrate(context, resolved, ctx)
                 is Action.Dnd -> doDnd(context, resolved)
-                is Action.Brightness -> doBrightness(context, resolved)
+                is Action.Brightness -> doBrightness(context, resolved, ctx)
                 is Action.Http -> doHttp(resolved, ctx)
                 is Action.MediaKey -> doMediaKey(context, resolved)
-                is Action.Wait -> doWait(resolved, allowWait)
+                is Action.Wait -> doWait(resolved, allowWait, ctx)
                 is Action.Clipboard -> doClipboard(context, resolved, source)
                 is Action.TakePhoto -> doTakePhoto(context, resolved, fgsSwitch, ctx)
                 is Action.BurstPhoto -> doBurstPhoto(context, resolved, fgsSwitch, ctx)
@@ -208,6 +208,17 @@ object RoutineExecutor {
             action.copy(template = VariableResolver.resolve(action.template, ctx))
 
         else -> action
+    }
+
+    /**
+     * 解析數值參數：[expr] 空 → 用原本的 [fallback]（舊資料 / 滑桿設定，行為不變）；
+     * 否則先變數代入、再 parse 成整數（失敗回退 [fallback]），最後夾在安全 [range] 內。
+     */
+    private fun resolveNum(expr: String, fallback: Int, range: IntRange, ctx: RunContext): Int {
+        if (expr.isBlank()) return fallback.coerceIn(range)
+        val resolved = VariableResolver.resolve(expr, ctx)
+        val n = resolved.trim().toIntOrNull() ?: fallback
+        return n.coerceIn(range)
     }
 
     // ---------- 個別動作 ----------
@@ -330,12 +341,13 @@ object RoutineExecutor {
         return "已改以通知呈現，點擊$verb"
     }
 
-    private fun doMediaVolume(context: Context, action: Action.MediaVolume): String? {
+    private fun doMediaVolume(context: Context, action: Action.MediaVolume, ctx: RunContext): String? {
         val audio = context.getSystemService(AudioManager::class.java)
             ?: error("無法取得音訊服務")
         val stream = audioStream(action.stream)
         val max = audio.getStreamMaxVolume(stream)
-        val target = (max * action.percent.coerceIn(0, 100) / 100f).roundToInt().coerceIn(0, max)
+        val percent = resolveNum(action.percentExpr, action.percent, Action.PERCENT_SAFE, ctx)
+        val target = (max * percent / 100f).roundToInt().coerceIn(0, max)
         try {
             audio.setStreamVolume(stream, target, 0)
         } catch (t: SecurityException) {
@@ -421,9 +433,8 @@ object RoutineExecutor {
         return null
     }
 
-    private fun doVibrate(context: Context, action: Action.Vibrate): String? {
-        val millis = action.millis
-            .coerceIn(Action.MIN_VIBRATE_MS, Action.MAX_VIBRATE_MS)
+    private fun doVibrate(context: Context, action: Action.Vibrate, ctx: RunContext): String? {
+        val millis = resolveNum(action.millisExpr, action.millis, Action.VIBRATE_MS_SAFE, ctx)
             .toLong()
         val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             context.getSystemService(VibratorManager::class.java)?.defaultVibrator
@@ -454,12 +465,13 @@ object RoutineExecutor {
      * 螢幕亮度：只寫亮度值，不動「自動亮度」旗標
      * （使用者開著自動亮度時，系統會在下一次環境光變化時接手，這是預期行為）。
      */
-    private fun doBrightness(context: Context, action: Action.Brightness): String? {
+    private fun doBrightness(context: Context, action: Action.Brightness, ctx: RunContext): String? {
         if (!canWriteSettings(context)) {
             notifyWriteSettingsNeeded(context)
             error("缺少「修改系統設定」權限，已發送授權引導通知")
         }
-        val value = (MAX_BRIGHTNESS * action.percent.coerceIn(0, 100) / 100f)
+        val percent = resolveNum(action.percentExpr, action.percent, Action.PERCENT_SAFE, ctx)
+        val value = (MAX_BRIGHTNESS * percent / 100f)
             .roundToInt()
             .coerceIn(0, MAX_BRIGHTNESS)
         val written = Settings.System.putInt(
@@ -526,9 +538,9 @@ object RoutineExecutor {
     }
 
     /** 等待：只有在前景執行服務或手動執行時才真的等 */
-    private suspend fun doWait(action: Action.Wait, allowWait: Boolean): String? {
+    private suspend fun doWait(action: Action.Wait, allowWait: Boolean, ctx: RunContext): String? {
         if (!allowWait) return "前景執行服務不可用，已跳過等待"
-        val seconds = action.seconds.coerceIn(Action.MIN_WAIT_SECONDS, Action.MAX_WAIT_SECONDS)
+        val seconds = resolveNum(action.secondsExpr, action.seconds, Action.WAIT_SECONDS_SAFE, ctx)
         delay(seconds * 1000L)
         return null
     }
@@ -598,9 +610,8 @@ object RoutineExecutor {
     ): String {
         requireCameraPermission(context)
         requireCaptureForeground(fgsSwitch, CaptureFgsType.CAMERA, "相機")
-        val count = action.count.coerceIn(Action.MIN_BURST_COUNT, Action.MAX_BURST_COUNT)
-        val interval = action.intervalMs
-            .coerceIn(Action.MIN_BURST_INTERVAL_MS, Action.MAX_BURST_INTERVAL_MS)
+        val count = resolveNum(action.countExpr, action.count, Action.BURST_COUNT_SAFE, ctx)
+        val interval = resolveNum(action.intervalExpr, action.intervalMs, Action.BURST_INTERVAL_SAFE, ctx)
         return try {
             val result = CameraCapture.capture(context, action.lensBack, count, interval.toLong())
             if (result.uris.isEmpty()) error("擷取失敗")
@@ -635,8 +646,7 @@ object RoutineExecutor {
     ): String {
         requireRecordPermission(context)
         requireCaptureForeground(fgsSwitch, CaptureFgsType.MICROPHONE, "麥克風")
-        val seconds = action.seconds
-            .coerceIn(Action.MIN_RECORD_SECONDS, Action.MAX_RECORD_SECONDS)
+        val seconds = resolveNum(action.secondsExpr, action.seconds, Action.RECORD_SECONDS_SAFE, ctx)
         return try {
             val result = AudioRecorder.record(context, seconds)
             // 音檔的 content URI 設為輸出（可能為 null，代空字串）
@@ -1090,23 +1100,26 @@ object RoutineExecutor {
         is Action.OpenApp -> "開啟 App：${action.appLabel.ifBlank { action.packageName }}"
         is Action.OpenUrl -> "開啟網址：${redactUrl(action.url, stripQuery = false)}"
         is Action.Share -> "分享：${redactText(action.text)}"
-        is Action.MediaVolume -> "${volumeStreamLabel(action.stream)}音量：${action.percent}%"
+        is Action.MediaVolume ->
+            "${volumeStreamLabel(action.stream)}音量：${numLabel(action.percentExpr, action.percent)}%"
+
         is Action.RingerMode -> "響鈴模式：${ringerLabel(action.mode)}"
         is Action.Bluetooth -> "藍牙：${if (action.enable) "開啟" else "關閉"}"
         is Action.Flashlight -> "手電筒：${if (action.on) "開啟" else "關閉"}"
         is Action.Speak -> "朗讀文字：${redactText(action.text)}"
-        is Action.Vibrate -> "震動：${action.millis} 毫秒"
+        is Action.Vibrate -> "震動：${numLabel(action.millisExpr, action.millis)} 毫秒"
         is Action.Dnd -> "勿擾模式：${if (action.on) "開啟" else "關閉"}"
-        is Action.Brightness -> "螢幕亮度：${action.percent}%"
+        is Action.Brightness -> "螢幕亮度：${numLabel(action.percentExpr, action.percent)}%"
         is Action.Http -> "HTTP ${action.method}：${redactUrl(action.url, stripQuery = true)}"
         is Action.MediaKey -> "播放控制：${mediaKeyLabel(action.key)}"
-        is Action.Wait -> "等待 ${action.seconds} 秒"
+        is Action.Wait -> "等待 ${numLabel(action.secondsExpr, action.seconds)} 秒"
         is Action.Clipboard -> "複製到剪貼簿：${redactText(action.text)}"
         is Action.TakePhoto -> "拍照：${lensLabel(action.lensBack)}"
         is Action.BurstPhoto ->
-            "連拍：${lensLabel(action.lensBack)}、${action.count} 張、間隔 ${action.intervalMs}ms"
+            "連拍：${lensLabel(action.lensBack)}、${numLabel(action.countExpr, action.count)} 張、" +
+                "間隔 ${numLabel(action.intervalExpr, action.intervalMs)}ms"
 
-        is Action.RecordAudio -> "錄音：${action.seconds} 秒"
+        is Action.RecordAudio -> "錄音：${numLabel(action.secondsExpr, action.seconds)} 秒"
         is Action.PlaySound -> "播放音效：${soundTypeLabel(action.type)}"
         is Action.SetAlarm -> {
             val time = "%02d:%02d".format(action.hour, action.minute)
@@ -1117,6 +1130,9 @@ object RoutineExecutor {
         is Action.SetVariable ->
             "設定變數 ${action.name.ifBlank { "(未命名)" }}：${redactText(action.template)}"
     }
+
+    /** 數值參數的顯示：expr 非空顯示 expr（數字或 {{...}}），否則顯示原本的整數值 */
+    private fun numLabel(expr: String, value: Int): String = expr.ifBlank { value.toString() }
 
     /**
      * RunLog 顯示用：截斷過長文字，避免剪貼簿／分享／朗讀的整段內容明文落地到 logs.json。

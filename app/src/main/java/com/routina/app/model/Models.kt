@@ -382,12 +382,16 @@ sealed class Action {
     @SerialName("share")
     data class Share(val text: String = "") : Action()
 
-    /** 設定音量（0–100%）。[stream] 有預設值，舊版只設媒體音量的 JSON 照常讀入。 */
+    /**
+     * 設定音量（0–100%）。[stream] 有預設值，舊版只設媒體音量的 JSON 照常讀入。
+     * [percentExpr] 非空時執行期解析（數字或變數）覆寫 [percent]，見 resolveNum。
+     */
     @Serializable
     @SerialName("media_volume")
     data class MediaVolume(
         val percent: Int = 50,
-        val stream: VolumeStream = VolumeStream.MEDIA
+        val stream: VolumeStream = VolumeStream.MEDIA,
+        val percentExpr: String = ""
     ) : Action()
 
     /** 切換響鈴模式 */
@@ -410,20 +414,26 @@ sealed class Action {
     @SerialName("speak")
     data class Speak(val text: String = "") : Action()
 
-    /** 震動指定毫秒（100–3000） */
+    /** 震動指定毫秒。[millisExpr] 非空時執行期解析覆寫 [millis]。 */
     @Serializable
     @SerialName("vibrate")
-    data class Vibrate(val millis: Int = 500) : Action()
+    data class Vibrate(
+        val millis: Int = 500,
+        val millisExpr: String = ""
+    ) : Action()
 
     /** 勿擾模式開／關 */
     @Serializable
     @SerialName("dnd")
     data class Dnd(val on: Boolean = true) : Action()
 
-    /** 螢幕亮度（0–100%），需要「修改系統設定」權限 */
+    /** 螢幕亮度（0–100%），需要「修改系統設定」權限。[percentExpr] 非空時執行期解析覆寫 [percent]。 */
     @Serializable
     @SerialName("brightness")
-    data class Brightness(val percent: Int = 50) : Action()
+    data class Brightness(
+        val percent: Int = 50,
+        val percentExpr: String = ""
+    ) : Action()
 
     /** HTTP 請求（webhook）：GET 或 POST，body 為純文字 */
     @Serializable
@@ -439,10 +449,13 @@ sealed class Action {
     @SerialName("media_key")
     data class MediaKey(val key: String = KEY_PLAY_PAUSE) : Action()
 
-    /** 等待 N 秒（1–30）後再執行後續動作 */
+    /** 等待 N 秒後再執行後續動作。[secondsExpr] 非空時執行期解析覆寫 [seconds]。 */
     @Serializable
     @SerialName("wait")
-    data class Wait(val seconds: Int = 3) : Action()
+    data class Wait(
+        val seconds: Int = 3,
+        val secondsExpr: String = ""
+    ) : Action()
 
     /**
      * 把文字複製到系統剪貼簿。
@@ -467,22 +480,31 @@ sealed class Action {
         @SerialName("notify") val notify: Boolean = true
     ) : Action()
 
-    /** 連拍：以選定鏡頭連續擷取 [count] 張（2–10）、每張間隔 [intervalMs] 毫秒（200–2000） */
+    /**
+     * 連拍：以選定鏡頭連續擷取 [count] 張、每張間隔 [intervalMs] 毫秒。
+     * [countExpr]/[intervalExpr] 非空時執行期解析（數字或變數）覆寫對應的數值。
+     */
     @Serializable
     @SerialName("burst_photo")
     data class BurstPhoto(
         val lensBack: Boolean = true,
         val count: Int = 3,
         val intervalMs: Int = 500,
-        @SerialName("notify") val notify: Boolean = true
+        @SerialName("notify") val notify: Boolean = true,
+        val countExpr: String = "",
+        val intervalExpr: String = ""
     ) : Action()
 
-    /** 錄音：錄製 [seconds] 秒（1–60）音訊存檔（受背景麥克風限制，同拍照） */
+    /**
+     * 錄音：錄製 [seconds] 秒音訊存檔（受背景麥克風限制，同拍照）。
+     * [secondsExpr] 非空時執行期解析覆寫 [seconds]。
+     */
     @Serializable
     @SerialName("record_audio")
     data class RecordAudio(
         val seconds: Int = 5,
-        @SerialName("notify") val notify: Boolean = true
+        @SerialName("notify") val notify: Boolean = true,
+        val secondsExpr: String = ""
     ) : Action()
 
     /** 播放系統音效（[type]：NOTIFICATION／ALARM／RINGTONE），無額外權限需求 */
@@ -528,22 +550,16 @@ sealed class Action {
         const val KEY_PREVIOUS = "PREVIOUS"
         val MEDIA_KEYS = listOf(KEY_PLAY_PAUSE, KEY_NEXT, KEY_PREVIOUS)
 
-        const val MIN_VIBRATE_MS = 100
-        const val MAX_VIBRATE_MS = 3000
-        const val MIN_WAIT_SECONDS = 1
-        const val MAX_WAIT_SECONDS = 30
-
-        /** 連拍張數範圍 */
-        const val MIN_BURST_COUNT = 2
-        const val MAX_BURST_COUNT = 10
-
-        /** 連拍間隔範圍（毫秒） */
-        const val MIN_BURST_INTERVAL_MS = 200
-        const val MAX_BURST_INTERVAL_MS = 2000
-
-        /** 錄音秒數範圍 */
-        const val MIN_RECORD_SECONDS = 1
-        const val MAX_RECORD_SECONDS = 60
+        /**
+         * 數值參數的安全範圍：直接輸入或變數解析後夾在此範圍內，擋掉荒謬值
+         * （例如連拍張數誤植成長時間佔用相機）。範圍比原本的滑桿寬，涵蓋各動作的合理上下限。
+         */
+        val BURST_COUNT_SAFE = 1..999
+        val BURST_INTERVAL_SAFE = 0..60000
+        val WAIT_SECONDS_SAFE = 1..3600
+        val VIBRATE_MS_SAFE = 1..10000
+        val RECORD_SECONDS_SAFE = 1..3600
+        val PERCENT_SAFE = 0..100
 
         /** 播放音效的系統音效類型 */
         const val SOUND_NOTIFICATION = "NOTIFICATION"
