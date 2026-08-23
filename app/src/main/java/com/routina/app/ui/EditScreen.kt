@@ -96,6 +96,7 @@ import com.routina.app.ui.blocks.ActionBlock
 import com.routina.app.ui.blocks.ActionPaletteSheet
 import com.routina.app.ui.blocks.BlockStackSpacing
 import com.routina.app.ui.blocks.GhostBlock
+import com.routina.app.ui.blocks.InsertPoint
 import com.routina.app.ui.blocks.TriggerBlock
 import com.routina.app.ui.blocks.TriggerPaletteSheet
 import com.routina.app.ui.blocks.TriggerParam
@@ -180,6 +181,8 @@ fun EditScreen(
 
     var showTriggerPalette by rememberSaveable { mutableStateOf(false) }
     var showActionPalette by rememberSaveable { mutableStateOf(false) }
+    // 開啟動作調色盤時要插入的位置；null＝加到最後（末尾幽靈積木）
+    var insertIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     var editingAction by rememberSaveable(stateSaver = IndexedActionSaver) {
         mutableStateOf<IndexedAction?>(null)
     }
@@ -378,6 +381,8 @@ fun EditScreen(
 
                 // 動作清單可拖曳排序：拖握把或長按積木本體拿起，放開（onSettle）即重排草稿。
                 // 只有動作清單放進 ReorderableColumn；帽子積木與幽靈積木在其外，不參與排序。
+                // 每塊動作前面帶一個插入點（「＋」），點它就把新動作插入該索引；
+                // 第一塊前的插入點＝插到最前（清單開頭）。
                 if (draft.actions.isNotEmpty()) {
                     ReorderableColumn(
                         list = draft.actions,
@@ -386,19 +391,33 @@ fun EditScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(BlockStackSpacing)
                     ) { index, action, isDragging ->
-                        ActionBlock(
-                            action = action,
-                            showControls = true,
-                            isDragging = isDragging,
-                            reorderableScope = this,
-                            onBodyClick = { editingAction = IndexedAction(index, action) },
-                            onRemove = { removeAction(index) }
-                        )
+                        // 捕捉 ReorderableScope；包一層 Column 後 this 會變成 ColumnScope
+                        val reorderScope = this
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            InsertPoint(onClick = {
+                                insertIndex = index
+                                showActionPalette = true
+                            })
+                            ActionBlock(
+                                action = action,
+                                showControls = true,
+                                isDragging = isDragging,
+                                reorderableScope = reorderScope,
+                                onBodyClick = { editingAction = IndexedAction(index, action) },
+                                onRemove = { removeAction(index) }
+                            )
+                        }
                     }
                 }
 
-                // 幽靈積木「＋加入動作」在排序容器外，不參與排序
-                GhostBlock(onClick = { showActionPalette = true })
+                // 幽靈積木「＋加入動作」在排序容器外，不參與排序；作為清單末尾的插入點（加到最後）
+                GhostBlock(onClick = {
+                    insertIndex = null
+                    showActionPalette = true
+                })
             }
 
             // 缺背景位置權限時的引導：Android 10 可直接請求，11+ 只能導到 App 設定頁
@@ -497,12 +516,20 @@ fun EditScreen(
         ActionPaletteSheet(
             onPick = { template ->
                 showActionPalette = false
-                // 先卡接到堆疊末端，再立即開啟參數編輯；取消時會移除這塊新積木
-                val index = draft.actions.size
-                draft = draft.copy(actions = draft.actions + template)
+                // 插入到選定的位置（插入點指定的索引；幽靈積木為 null＝加到最後），
+                // 再立即開啟參數編輯；取消時會移除這塊新積木
+                val index = (insertIndex ?: draft.actions.size)
+                    .coerceIn(0, draft.actions.size)
+                insertIndex = null
+                draft = draft.copy(
+                    actions = draft.actions.toMutableList().apply { add(index, template) }
+                )
                 editingAction = IndexedAction(index, template, isNew = true)
             },
-            onDismiss = { showActionPalette = false }
+            onDismiss = {
+                showActionPalette = false
+                insertIndex = null
+            }
         )
     }
 

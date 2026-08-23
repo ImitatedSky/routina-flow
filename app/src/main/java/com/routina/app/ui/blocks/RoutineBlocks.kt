@@ -13,12 +13,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.Icon
@@ -605,6 +607,54 @@ fun GhostBlock(
             fontWeight = FontWeight.Bold
         )
     }
+}
+
+/**
+ * 動作之間 / 清單開頭的插入點：一條淡線 + 中央「＋」小圓，點擊即在該索引插入新動作。
+ * 刻意做得低調（淡色、細），只在需要「插到這裡」時才被注意到，不與積木本身搶視覺。
+ */
+@Composable
+fun InsertPoint(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val tint = MaterialTheme.colorScheme.primary
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 24.dp)
+            .clip(RoundedCornerShape(50))
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        InsertLine(tint, Modifier.weight(1f))
+        Box(
+            modifier = Modifier
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(tint.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Add,
+                contentDescription = "在此插入動作",
+                tint = tint.copy(alpha = 0.8f),
+                modifier = Modifier.size(14.dp)
+            )
+        }
+        InsertLine(tint, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun InsertLine(tint: Color, modifier: Modifier) {
+    Box(
+        modifier = modifier
+            .height(1.5.dp)
+            .clip(RoundedCornerShape(50))
+            .background(tint.copy(alpha = 0.25f))
+    )
 }
 
 /** 清單預覽超出顯示上限時的灰積木 */
