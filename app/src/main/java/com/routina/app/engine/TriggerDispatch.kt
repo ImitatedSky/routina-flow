@@ -26,6 +26,7 @@ object TriggerDispatch {
     /**
      * 執行 [routines]（已由呼叫端過濾出符合觸發條件者）。
      *
+     * @param triggerContext 觸發帶來的情境值（如通知標題/內容），一路傳到動作的變數解析。
      * @param onFinished 全部工作交付（或降級執行完成）後呼叫一次；
      * 供 BroadcastReceiver 決定何時 `PendingResult.finish()`。
      */
@@ -33,10 +34,13 @@ object TriggerDispatch {
         context: Context,
         routines: List<Routine>,
         source: TriggerSource,
+        triggerContext: Map<String, String> = emptyMap(),
         onFinished: (() -> Unit)? = null
     ) {
         val appContext = context.applicationContext
-        val degraded = routines.filterNot { ExecutionService.start(appContext, it.id, source) }
+        val degraded = routines.filterNot {
+            ExecutionService.start(appContext, it.id, source, triggerContext)
+        }
 
         if (degraded.isEmpty()) {
             onFinished?.invoke()
@@ -53,7 +57,8 @@ object TriggerDispatch {
                         // 行程隨時可能在接收器返回後被回收 → 紀錄必須同步落地
                         persistBlocking = true,
                         allowWait = false,
-                        note = ExecutionService.DEGRADED_NOTE
+                        note = ExecutionService.DEGRADED_NOTE,
+                        triggerContext = triggerContext
                     )
                 }
             }
@@ -66,6 +71,7 @@ object TriggerDispatch {
         context: Context,
         routine: Routine,
         source: TriggerSource,
+        triggerContext: Map<String, String> = emptyMap(),
         onFinished: (() -> Unit)? = null
-    ) = run(context, listOf(routine), source, onFinished)
+    ) = run(context, listOf(routine), source, triggerContext, onFinished)
 }

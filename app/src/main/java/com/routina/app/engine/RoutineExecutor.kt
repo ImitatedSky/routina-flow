@@ -16,6 +16,7 @@ import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.media.RingtoneManager
 import android.net.Uri
+import android.os.BatteryManager
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -34,6 +35,7 @@ import com.routina.app.model.ActionResult
 import com.routina.app.model.RingerModeType
 import com.routina.app.model.Routine
 import com.routina.app.model.RunLog
+import com.routina.app.model.Trigger
 import com.routina.app.model.TriggerSource
 import com.routina.app.model.VolumeStream
 import kotlinx.coroutines.Dispatchers
@@ -81,6 +83,7 @@ object RoutineExecutor {
      * 接收器內同步執行時為 false（廣播接收器有時限，不能等）。
      * @param note 執行環境的補充說明，會寫進 RunLog（例如降級執行）。
      * @param fgsSwitch 拍照／錄音動作用的前景服務類型切換；手動執行為 null。
+     * @param triggerContext 觸發帶來的情境值（如通知標題/內容）；手動與定時執行為空。
      * @return 這次執行的紀錄（呼叫端可據此顯示結果）
      */
     suspend fun execute(
@@ -90,7 +93,8 @@ object RoutineExecutor {
         persistBlocking: Boolean = false,
         allowWait: Boolean = true,
         note: String? = null,
-        fgsSwitch: ForegroundTypeSwitch? = null
+        fgsSwitch: ForegroundTypeSwitch? = null,
+        triggerContext: Map<String, String> = emptyMap()
     ): RunLog {
         val appContext = context.applicationContext
         // Android 10+ 起，從 Receiver / Service 呼叫 startActivity 會被系統靜默丟棄
@@ -100,9 +104,19 @@ object RoutineExecutor {
             context is Activity ||
             canDrawOverlays(appContext)
 
+        // 一次執行建立一個情境，貫穿所有動作。觸發情境依序疊加：
+        // 常用（時間/日期/星期/電量）→ 由 routine 觸發設定推得（地點/裝置名稱等）→
+        // 呼叫端傳入的當次觸發實際值（如實際通知內容，可覆寫前面的預設）。
+        val ctx = RunContext().apply {
+            trigger.putAll(commonTriggerValues(appContext))
+            trigger.putAll(triggerContextFromRoutine(routine.trigger))
+            trigger.putAll(triggerContext)
+        }
+
         val results = routine.actions.mapIndexed { index, action ->
             runAction(
-                appContext, routine, index, action, source, canLaunchActivity, allowWait, fgsSwitch
+                appContext, routine, index, action, source, canLaunchActivity, allowWait,
+                fgsSwitch, ctx
             )
         }
 
@@ -130,37 +144,70 @@ object RoutineExecutor {
         source: TriggerSource,
         canLaunchActivity: Boolean,
         allowWait: Boolean,
-        fgsSwitch: ForegroundTypeSwitch?
+        fgsSwitch: ForegroundTypeSwitch?,
+        ctx: RunContext
     ): ActionResult {
-        val description = describe(context, action)
+        // 先把文字參數的變數 token 代入實際值；描述與遮罩都以代入後的內容為準
+        val resolved = resolveAction(action, ctx)
+        val description = describe(context, resolved)
         return try {
-            val note = when (action) {
-                is Action.Notify -> doNotify(context, routine, index, action)
-                is Action.OpenApp -> doOpenApp(context, routine, index, action, canLaunchActivity)
-                is Action.OpenUrl -> doOpenUrl(context, routine, index, action, canLaunchActivity)
-                is Action.Share -> doShare(context, routine, index, action, canLaunchActivity)
-                is Action.MediaVolume -> doMediaVolume(context, action)
-                is Action.RingerMode -> doRingerMode(context, action)
-                is Action.Bluetooth -> doBluetooth(context, routine, index, action)
-                is Action.Flashlight -> doFlashlight(context, action)
-                is Action.Speak -> doSpeak(context, action)
-                is Action.Vibrate -> doVibrate(context, action)
-                is Action.Dnd -> doDnd(context, action)
-                is Action.Brightness -> doBrightness(context, action)
-                is Action.Http -> doHttp(action)
-                is Action.MediaKey -> doMediaKey(context, action)
-                is Action.Wait -> doWait(action, allowWait)
-                is Action.Clipboard -> doClipboard(context, action, source)
-                is Action.TakePhoto -> doTakePhoto(context, action, fgsSwitch)
-                is Action.BurstPhoto -> doBurstPhoto(context, action, fgsSwitch)
-                is Action.RecordAudio -> doRecordAudio(context, action, fgsSwitch)
-                is Action.PlaySound -> doPlaySound(context, action)
-                is Action.SetAlarm -> doSetAlarm(context, routine, index, action, canLaunchActivity)
+            val note = when (resolved) {
+                is Action.Notify -> doNotify(context, routine, index, resolved)
+                is Action.OpenApp -> doOpenApp(context, routine, index, resolved, canLaunchActivity)
+                is Action.OpenUrl -> doOpenUrl(context, routine, index, resolved, canLaunchActivity)
+                is Action.Share -> doShare(context, routine, index, resolved, canLaunchActivity)
+                is Action.MediaVolume -> doMediaVolume(context, resolved)
+                is Action.RingerMode -> doRingerMode(context, resolved)
+                is Action.Bluetooth -> doBluetooth(context, routine, index, resolved)
+                is Action.Flashlight -> doFlashlight(context, resolved)
+                is Action.Speak -> doSpeak(context, resolved)
+                is Action.Vibrate -> doVibrate(context, resolved)
+                is Action.Dnd -> doDnd(context, resolved)
+                is Action.Brightness -> doBrightness(context, resolved)
+                is Action.Http -> doHttp(resolved, ctx)
+                is Action.MediaKey -> doMediaKey(context, resolved)
+                is Action.Wait -> doWait(resolved, allowWait)
+                is Action.Clipboard -> doClipboard(context, resolved, source)
+                is Action.TakePhoto -> doTakePhoto(context, resolved, fgsSwitch, ctx)
+                is Action.BurstPhoto -> doBurstPhoto(context, resolved, fgsSwitch, ctx)
+                is Action.RecordAudio -> doRecordAudio(context, resolved, fgsSwitch, ctx)
+                is Action.PlaySound -> doPlaySound(context, resolved)
+                is Action.SetAlarm -> doSetAlarm(context, routine, index, resolved, canLaunchActivity)
+                is Action.Text -> doText(resolved, ctx)
+                is Action.SetVariable -> doSetVariable(resolved, ctx)
             }
             ActionResult(if (note == null) description else "$description（$note）", true)
         } catch (t: Throwable) {
             ActionResult(description, false, t.message ?: t.javaClass.simpleName)
         }
+    }
+
+    /**
+     * 把動作的文字參數過一次變數解析，回傳代入後的動作。
+     * 沒有文字參數或不含 token 的動作原樣回傳（[VariableResolver.resolve] 對純文字零改動）。
+     * `設定變數` 的名稱是識別碼、不做解析，只解析它的值。
+     */
+    private fun resolveAction(action: Action, ctx: RunContext): Action = when (action) {
+        is Action.Notify -> action.copy(
+            title = VariableResolver.resolve(action.title, ctx),
+            message = VariableResolver.resolve(action.message, ctx)
+        )
+
+        is Action.OpenUrl -> action.copy(url = VariableResolver.resolve(action.url, ctx))
+        is Action.Share -> action.copy(text = VariableResolver.resolve(action.text, ctx))
+        is Action.Speak -> action.copy(text = VariableResolver.resolve(action.text, ctx))
+        is Action.Http -> action.copy(
+            url = VariableResolver.resolve(action.url, ctx),
+            body = VariableResolver.resolve(action.body, ctx)
+        )
+
+        is Action.Clipboard -> action.copy(text = VariableResolver.resolve(action.text, ctx))
+        is Action.SetAlarm -> action.copy(label = VariableResolver.resolve(action.label, ctx))
+        is Action.Text -> action.copy(template = VariableResolver.resolve(action.template, ctx))
+        is Action.SetVariable ->
+            action.copy(template = VariableResolver.resolve(action.template, ctx))
+
+        else -> action
     }
 
     // ---------- 個別動作 ----------
@@ -424,39 +471,45 @@ object RoutineExecutor {
         return null
     }
 
-    /** HTTP 請求（webhook）：連線 / 讀取各 10 秒逾時，2xx 視為成功 */
-    private suspend fun doHttp(action: Action.Http): String = withContext(Dispatchers.IO) {
-        val normalized = normalizeUrl(action.url)
-        val method = if (action.method.equals(Action.METHOD_POST, ignoreCase = true)) {
-            Action.METHOD_POST
-        } else {
-            Action.METHOD_GET
-        }
+    /**
+     * HTTP 請求（webhook）：連線 / 讀取各 10 秒逾時，2xx 視為成功。
+     * 2xx 的回應內容存入 [RunContext.lastOutput]，後續動作可用 `{{result}}` 引用
+     * （過長時截斷，避免情境無限膨脹）。
+     */
+    private suspend fun doHttp(action: Action.Http, ctx: RunContext): String =
+        withContext(Dispatchers.IO) {
+            val normalized = normalizeUrl(action.url)
+            val method = if (action.method.equals(Action.METHOD_POST, ignoreCase = true)) {
+                Action.METHOD_POST
+            } else {
+                Action.METHOD_GET
+            }
 
-        val connection = (URL(normalized).openConnection() as HttpURLConnection).apply {
-            connectTimeout = HTTP_TIMEOUT_MS
-            readTimeout = HTTP_TIMEOUT_MS
-            requestMethod = method
-            instanceFollowRedirects = true
-        }
-        try {
-            if (method == Action.METHOD_POST) {
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
-                connection.outputStream.use { it.write(action.body.toByteArray(Charsets.UTF_8)) }
+            val connection = (URL(normalized).openConnection() as HttpURLConnection).apply {
+                connectTimeout = HTTP_TIMEOUT_MS
+                readTimeout = HTTP_TIMEOUT_MS
+                requestMethod = method
+                instanceFollowRedirects = true
             }
-            val code = connection.responseCode
-            // 回應內容不保留，但必須讀完（或關閉）才能讓連線正確回收
-            runCatching {
-                (if (code in 200..299) connection.inputStream else connection.errorStream)
-                    ?.use { it.readBytes() }
+            try {
+                if (method == Action.METHOD_POST) {
+                    connection.doOutput = true
+                    connection.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+                    connection.outputStream.use { it.write(action.body.toByteArray(Charsets.UTF_8)) }
+                }
+                val code = connection.responseCode
+                // 讀完回應（必須讀完或關閉才能讓連線正確回收）；成功時保留為輸出
+                val body = runCatching {
+                    (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.use { it.readBytes().toString(Charsets.UTF_8) }
+                }.getOrNull()
+                if (code !in 200..299) error("HTTP $code")
+                ctx.lastOutput = body?.take(MAX_HTTP_OUTPUT_CHARS) ?: ""
+                "HTTP $code"
+            } finally {
+                runCatching { connection.disconnect() }
             }
-            if (code !in 200..299) error("HTTP $code")
-            "HTTP $code"
-        } finally {
-            runCatching { connection.disconnect() }
         }
-    }
 
     /** 播放控制：送出成對的媒體按鍵事件（按下 + 放開） */
     private fun doMediaKey(context: Context, action: Action.MediaKey): String? {
@@ -511,13 +564,16 @@ object RoutineExecutor {
     private suspend fun doTakePhoto(
         context: Context,
         action: Action.TakePhoto,
-        fgsSwitch: ForegroundTypeSwitch?
+        fgsSwitch: ForegroundTypeSwitch?,
+        ctx: RunContext
     ): String {
         requireCameraPermission(context)
         requireCaptureForeground(fgsSwitch, CaptureFgsType.CAMERA, "相機")
         return try {
             val result = CameraCapture.capture(context, action.lensBack, count = 1, intervalMs = 0L)
             if (result.uris.isEmpty()) error("擷取失敗")
+            // 相片的 content URI 設為輸出，後續動作可用 {{result}} 引用
+            ctx.lastOutput = result.uris.lastOrNull()?.toString() ?: ""
             if (action.notify) {
                 notifyCaptureResult(
                     context = context,
@@ -537,7 +593,8 @@ object RoutineExecutor {
     private suspend fun doBurstPhoto(
         context: Context,
         action: Action.BurstPhoto,
-        fgsSwitch: ForegroundTypeSwitch?
+        fgsSwitch: ForegroundTypeSwitch?,
+        ctx: RunContext
     ): String {
         requireCameraPermission(context)
         requireCaptureForeground(fgsSwitch, CaptureFgsType.CAMERA, "相機")
@@ -547,6 +604,8 @@ object RoutineExecutor {
         return try {
             val result = CameraCapture.capture(context, action.lensBack, count, interval.toLong())
             if (result.uris.isEmpty()) error("擷取失敗")
+            // 最後一張的 content URI 設為輸出
+            ctx.lastOutput = result.uris.lastOrNull()?.toString() ?: ""
             if (action.notify) {
                 notifyCaptureResult(
                     context = context,
@@ -571,7 +630,8 @@ object RoutineExecutor {
     private suspend fun doRecordAudio(
         context: Context,
         action: Action.RecordAudio,
-        fgsSwitch: ForegroundTypeSwitch?
+        fgsSwitch: ForegroundTypeSwitch?,
+        ctx: RunContext
     ): String {
         requireRecordPermission(context)
         requireCaptureForeground(fgsSwitch, CaptureFgsType.MICROPHONE, "麥克風")
@@ -579,6 +639,8 @@ object RoutineExecutor {
             .coerceIn(Action.MIN_RECORD_SECONDS, Action.MAX_RECORD_SECONDS)
         return try {
             val result = AudioRecorder.record(context, seconds)
+            // 音檔的 content URI 設為輸出（可能為 null，代空字串）
+            ctx.lastOutput = result.uri?.toString() ?: ""
             if (action.notify) {
                 notifyCaptureResult(
                     context = context,
@@ -635,6 +697,20 @@ object RoutineExecutor {
         }
         val title = "設定鬧鐘 %02d:%02d".format(hour, minute)
         return launchOrNotify(context, routine, index, intent, title, canLaunchActivity)
+    }
+
+    /** 文字：把（已代入變數的）文字設為輸出，供後續動作以 {{result}} 引用 */
+    private fun doText(action: Action.Text, ctx: RunContext): String? {
+        ctx.lastOutput = action.template
+        return null
+    }
+
+    /** 設定變數：把（已代入變數的）值存成具名變數，供後續以 {{var:名稱}} 引用 */
+    private fun doSetVariable(action: Action.SetVariable, ctx: RunContext): String? {
+        val name = action.name.trim()
+        if (name.isBlank()) error("未設定變數名稱")
+        ctx.vars[name] = action.template
+        return null
     }
 
     /** 相機權限檢查；未授權時發引導通知並中止這個動作 */
@@ -929,6 +1005,61 @@ object RoutineExecutor {
     fun canDrawOverlays(context: Context): Boolean =
         runCatching { Settings.canDrawOverlays(context) }.getOrDefault(false)
 
+    // ---------- 觸發情境值 ----------
+
+    /** 所有執行都可用的常用情境值：當下時間、日期、星期、電量 */
+    private fun commonTriggerValues(context: Context): Map<String, String> {
+        val now = System.currentTimeMillis()
+        val values = mutableMapOf(
+            "時間" to formatClock("HH:mm", now),
+            "日期" to formatClock("yyyy-MM-dd", now),
+            "星期" to weekdayName(now)
+        )
+        batteryPercent(context)?.let { values["電量"] = it.toString() }
+        return values
+    }
+
+    /**
+     * 由 routine 自身的觸發設定推得的情境值（地點 / 標籤 / 網路 / 裝置名稱、通知來源 App）。
+     * 這些是設定時就已知的「名稱」；當次觸發若帶來更即時的實際值，會在 execute 覆寫這裡的預設。
+     */
+    private fun triggerContextFromRoutine(trigger: Trigger): Map<String, String> = buildMap {
+        when (trigger) {
+            is Trigger.LocationEnter -> if (trigger.label.isNotBlank()) put("地點名稱", trigger.label)
+            is Trigger.LocationExit -> if (trigger.label.isNotBlank()) put("地點名稱", trigger.label)
+            is Trigger.NfcTag -> if (trigger.label.isNotBlank()) put("標籤名稱", trigger.label)
+            is Trigger.WifiConnected -> if (trigger.ssid.isNotBlank()) put("Wi-Fi名稱", trigger.ssid)
+            is Trigger.BtConnected ->
+                if (trigger.deviceName.isNotBlank()) put("藍牙裝置", trigger.deviceName)
+
+            is Trigger.BtDisconnected ->
+                if (trigger.deviceName.isNotBlank()) put("藍牙裝置", trigger.deviceName)
+
+            is Trigger.NotificationPosted ->
+                if (trigger.appName.isNotBlank()) put("通知來源App", trigger.appName)
+
+            else -> Unit
+        }
+    }
+
+    private fun formatClock(pattern: String, timeMs: Long): String =
+        java.text.SimpleDateFormat(pattern, java.util.Locale.getDefault())
+            .format(java.util.Date(timeMs))
+
+    /** 星期：週一 … 週日（Calendar 的 DAY_OF_WEEK 以週日為 1） */
+    private fun weekdayName(timeMs: Long): String {
+        val calendar = java.util.Calendar.getInstance().apply { timeInMillis = timeMs }
+        val labels = arrayOf("日", "一", "二", "三", "四", "五", "六")
+        val index = (calendar.get(java.util.Calendar.DAY_OF_WEEK) - 1).coerceIn(0, 6)
+        return "週" + labels[index]
+    }
+
+    private fun batteryPercent(context: Context): Int? = runCatching {
+        context.getSystemService(BatteryManager::class.java)
+            ?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            ?.takeIf { it in 0..100 }
+    }.getOrNull()
+
     /** 已帶 scheme（http:、mailto:、myapp: …）就原樣使用，否則補上 https:// */
     private fun normalizeUrl(raw: String): String {
         val trimmed = raw.trim()
@@ -981,6 +1112,10 @@ object RoutineExecutor {
             val time = "%02d:%02d".format(action.hour, action.minute)
             if (action.label.isBlank()) "設定鬧鐘：$time" else "設定鬧鐘：$time（${action.label}）"
         }
+
+        is Action.Text -> "文字：${redactText(action.template)}"
+        is Action.SetVariable ->
+            "設定變數 ${action.name.ifBlank { "(未命名)" }}：${redactText(action.template)}"
     }
 
     /**
@@ -1043,6 +1178,9 @@ object RoutineExecutor {
     private const val MAX_BRIGHTNESS = 255
 
     private const val HTTP_TIMEOUT_MS = 10_000
+
+    /** HTTP 回應保留為輸出時的長度上限，避免執行情境無限膨脹 */
+    private const val MAX_HTTP_OUTPUT_CHARS = 10_000
 
     /** 剪貼簿項目的標籤（部分系統 UI 會顯示來源名稱） */
     private const val CLIP_LABEL = "Routina"

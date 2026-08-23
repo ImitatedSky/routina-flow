@@ -44,8 +44,29 @@ class RoutinaNotificationListener : NotificationListenerService() {
         // 同一則通知常被更新多次（進度、群組合併），5 秒內只算一次
         if (!allowFiring(sbn.key)) return
 
-        TriggerDispatch.run(this, matched, TriggerSource.NOTIFICATION)
+        // 觸發情境：讓動作能引用 {{通知標題}} / {{通知內容}} / {{通知來源App}}
+        val triggerContext = buildMap {
+            extraText(notification, Notification.EXTRA_TITLE)
+                .takeIf { it.isNotBlank() }?.let { put("通知標題", it) }
+            val body = extraText(notification, Notification.EXTRA_TEXT)
+                .ifBlank { extraText(notification, Notification.EXTRA_BIG_TEXT) }
+            if (body.isNotBlank()) put("通知內容", body)
+            put("通知來源App", appLabelOf(source))
+        }
+
+        TriggerDispatch.run(this, matched, TriggerSource.NOTIFICATION, triggerContext = triggerContext)
     }
+
+    /** 讀取通知 extras 的單一文字欄（內容由其他 App 產生，一律不得崩潰） */
+    private fun extraText(notification: Notification, key: String): String = runCatching {
+        notification.extras?.getCharSequence(key)?.toString()?.trim() ?: ""
+    }.getOrDefault("")
+
+    /** 來源 App 的顯示名稱；讀不到時退回套件名 */
+    private fun appLabelOf(packageName: String): String = runCatching {
+        val pm = packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
+    }.getOrDefault(packageName)
 
     private fun matchingRoutines(source: String, content: String): List<Routine> =
         RoutineRepository.get(this).routines.value.filter { routine ->

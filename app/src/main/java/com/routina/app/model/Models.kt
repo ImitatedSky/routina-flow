@@ -499,6 +499,25 @@ sealed class Action {
         val label: String = ""
     ) : Action()
 
+    /**
+     * 文字：把一段（可含變數 token 的）文字設為輸出，
+     * 作為後續動作以 `{{result}}` 引用的資料來源。
+     */
+    @Serializable
+    @SerialName("text")
+    data class Text(val template: String = "") : Action()
+
+    /**
+     * 設定變數：把一段（可含變數 token 的）文字解析後存成具名變數，
+     * 供後續動作以 `{{var:名稱}}` 引用。
+     */
+    @Serializable
+    @SerialName("set_variable")
+    data class SetVariable(
+        val name: String = "",
+        val template: String = ""
+    ) : Action()
+
     companion object {
         const val METHOD_GET = "GET"
         const val METHOD_POST = "POST"

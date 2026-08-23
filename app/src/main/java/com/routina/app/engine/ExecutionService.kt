@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.routina.app.MainActivity
@@ -50,7 +51,11 @@ class ExecutionService : Service() {
      */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private data class Pending(val routineId: String, val source: TriggerSource)
+    private data class Pending(
+        val routineId: String,
+        val source: TriggerSource,
+        val triggerContext: Map<String, String>
+    )
 
     /**
      * 拍照／錄音動作用的前景服務類型切換。
@@ -109,8 +114,9 @@ class ExecutionService : Service() {
             return START_NOT_STICKY
         }
         val source = parseSource(intent.getStringExtra(EXTRA_SOURCE))
+        val triggerContext = readTriggerContext(intent.getBundleExtra(EXTRA_TRIGGER))
 
-        synchronized(queue) { queue.addLast(Pending(routineId, source)) }
+        synchronized(queue) { queue.addLast(Pending(routineId, source, triggerContext)) }
         drain()
         // 不要 START_STICKY：服務被系統殺掉後重啟一個空 intent 沒有任何意義
         return START_NOT_STICKY
@@ -159,8 +165,15 @@ class ExecutionService : Service() {
             note = if (inForeground) null else DEGRADED_NOTE,
             // 進得了前景時才提供類型切換；降級（背景）執行時傳 null，
             // 拍照/錄音會因無法取得前景相機/麥克風而記為受限失敗
-            fgsSwitch = if (inForeground) captureSwitch else null
+            fgsSwitch = if (inForeground) captureSwitch else null,
+            triggerContext = pending.triggerContext
         )
+    }
+
+    /** 把觸發情境的 Bundle 還原成字串 map（無資料時為空 map） */
+    private fun readTriggerContext(bundle: Bundle?): Map<String, String> {
+        if (bundle == null) return emptyMap()
+        return bundle.keySet().associateWith { bundle.getString(it) ?: "" }
     }
 
     /** @return 是否成功進入前景 */
@@ -202,6 +215,7 @@ class ExecutionService : Service() {
         private const val NOTIFICATION_ID = 43
         private const val EXTRA_ROUTINE_ID = "routine_id"
         private const val EXTRA_SOURCE = "source"
+        private const val EXTRA_TRIGGER = "trigger_context"
 
         /** 降級執行時寫進 RunLog 的註記 */
         const val DEGRADED_NOTE = "前景執行服務無法啟動，已於接收器內降級執行（等待動作被跳過）"
@@ -213,11 +227,22 @@ class ExecutionService : Service() {
          * （Android 12+ 的 ForegroundServiceStartNotAllowedException），
          * 呼叫端應改走降級路徑。
          */
-        fun start(context: Context, routineId: String, source: TriggerSource): Boolean {
+        fun start(
+            context: Context,
+            routineId: String,
+            source: TriggerSource,
+            triggerContext: Map<String, String> = emptyMap()
+        ): Boolean {
             val appContext = context.applicationContext
             val intent = Intent(appContext, ExecutionService::class.java)
                 .putExtra(EXTRA_ROUTINE_ID, routineId)
                 .putExtra(EXTRA_SOURCE, source.name)
+            if (triggerContext.isNotEmpty()) {
+                val bundle = Bundle().apply {
+                    triggerContext.forEach { (key, value) -> putString(key, value) }
+                }
+                intent.putExtra(EXTRA_TRIGGER, bundle)
+            }
             return runCatching {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     appContext.startForegroundService(intent)
