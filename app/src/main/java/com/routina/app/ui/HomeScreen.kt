@@ -29,8 +29,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,6 +43,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -56,6 +59,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -97,6 +101,8 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     // 非空狀態下 FAB 帶出的「從範本建立 / 空白建立」sheet
     var showTemplateSheet by remember { mutableStateOf(false) }
+    // 清單搜尋查詢（旋轉 / 程序重建後保留）
+    var query by rememberSaveable { mutableStateOf("") }
 
     // 權限狀態：從系統設定頁返回時（ON_RESUME）重新檢查，授權完成後引導卡要立即消失
     var canScheduleExact by remember { mutableStateOf(viewModel.canScheduleExactAlarms()) }
@@ -370,11 +376,31 @@ fun HomeScreen(
             }
 
             if (routines.isEmpty()) {
+                // 範本空狀態只在「完全沒有 routine」時出現，搜尋無結果不走這裡
                 EmptyState(
                     onPick = { onCreateFromTemplate(it.id) },
                     onBlank = onCreate
                 )
             } else {
+                SearchBar(
+                    query = query,
+                    onQueryChange = { query = it },
+                    onClear = { query = "" }
+                )
+
+                val trimmed = query.trim()
+                val filtered = if (trimmed.isEmpty()) {
+                    routines
+                } else {
+                    routines.filter { routineSearchText(it).contains(trimmed, ignoreCase = true) }
+                }
+
+                if (filtered.isEmpty()) {
+                    // 有查詢但無符合：與範本空狀態區分開，只給一句提示、不跳範本格
+                    NoSearchResults(Modifier.weight(1f))
+                    return@Column
+                }
+
                 // 一次查好權限狀態與日出日落座標，交給每張卡片彙整自己的狀態晶片，
                 // 避免在 LazyColumn 每次重繪時對每張卡片重複查詢系統
                 val permSnapshot = PermSnapshot(
@@ -394,10 +420,11 @@ fun HomeScreen(
                 val sunLocation = remember(routines) { viewModel.sunLocation() }
 
                 LazyColumn(
-                    contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(12.dp, 6.dp, 12.dp, 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(routines, key = { it.id }) { routine ->
+                    items(filtered, key = { it.id }) { routine ->
                         RoutineCard(
                             routine = routine,
                             lastLog = logs.firstOrNull { it.routineId == routine.id },
@@ -675,6 +702,58 @@ private fun EmptyState(
     }
 }
 
+/** 清單頂部搜尋列：依名稱與觸發／動作摘要即時過濾，非空時右側顯示清除鈕 */
+@Composable
+private fun SearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClear: () -> Unit
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        placeholder = { Text("搜尋例行程序") },
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = onClear) {
+                    Icon(Icons.Filled.Clear, contentDescription = "清除搜尋")
+                }
+            }
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(14.dp)
+    )
+}
+
+/** 搜尋無結果：與範本空狀態區分，只給一句提示 */
+@Composable
+private fun NoSearchResults(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            "找不到符合的例行程序",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "換個關鍵字，或清除搜尋看全部。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
 /** 清單卡片：名稱 + 狀態晶片列 + 縮小版唯讀積木堆疊 + 啟用開關／立即執行 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -696,7 +775,7 @@ private fun RoutineCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp, 12.dp)) {
+        Column(modifier = Modifier.padding(12.dp, 10.dp)) {
             Text(
                 routine.name.ifBlank { "(未命名)" },
                 style = MaterialTheme.typography.titleMedium,
@@ -717,11 +796,11 @@ private fun RoutineCard(
                 sunLocation = sunLocation,
                 permIssues = permIssues,
                 modifier = Modifier
-                    .padding(top = 8.dp)
+                    .padding(top = 6.dp)
                     .alpha(if (routine.enabled) 1f else 0.5f)
             )
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             RoutinePreviewStack(
                 routine = routine,
                 modifier = Modifier.alpha(if (routine.enabled) 1f else 0.4f)

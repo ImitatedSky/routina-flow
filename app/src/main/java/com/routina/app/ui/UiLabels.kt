@@ -6,6 +6,7 @@ import com.routina.app.model.AppTarget
 import com.routina.app.model.BtDevice
 import com.routina.app.model.GeoCircle
 import com.routina.app.model.RingerModeType
+import com.routina.app.model.Routine
 import com.routina.app.model.TimeMode
 import com.routina.app.model.Trigger
 import com.routina.app.model.TriggerSource
@@ -203,6 +204,19 @@ private fun String.flattenLines(): String =
 
 private fun truncate(text: String, max: Int): String =
     if (text.length <= max) text else text.take(max) + "…"
+
+/**
+ * 首頁搜尋的比對字串：名稱 + 觸發摘要 + 每個動作的類型名與參數文字。
+ * 沿用既有的 triggerSummary / actionTypeName / actionParamText，過濾時不分大小寫比對。
+ */
+fun routineSearchText(routine: Routine): String = buildString {
+    append(routine.name)
+    append(' ').append(triggerSummary(routine.trigger))
+    routine.actions.forEach { action ->
+        append(' ').append(actionTypeName(action))
+        append(' ').append(actionParamText(action))
+    }
+}
 
 fun ringerModeName(mode: RingerModeType): String = RoutineExecutor.ringerLabel(mode)
 
