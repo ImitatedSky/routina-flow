@@ -42,7 +42,7 @@
 
 ## 下載與安裝
 
-1. 到 [**Releases**](https://github.com/ImitatedSky/routina/releases/latest) 下載最新的 `app-release.apk`（每次推送 `v*` 版本標籤時由 CI 自動建置發佈）
+1. 到 [**Releases**](https://github.com/ImitatedSky/routina/releases) 下載某個版本的 `routina-vX.Y.Z.apk`（每個 `v*` 版本標籤都由 CI 自動建置成一個**永久保留的 Release**，可依版本下載）
 2. 傳到手機、用檔案管理員點開
 3. 系統提示「未知來源」→ 允許安裝
 4. 開啟 Routina

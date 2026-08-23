@@ -60,13 +60,15 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      # 推送版本標籤（v*）時，把 APK 發佈到 GitHub Releases 作為下載頁
+      # 推送版本標籤（v*）時，把 APK 以帶版本號的檔名發佈到 GitHub Releases。
+      # 每個標籤都是獨立且永久保留的 Release，使用者可依版本下載。
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          cp app/build/outputs/apk/release/app-release.apk "routina-${GITHUB_REF_NAME}.apk"
           gh release create "$GITHUB_REF_NAME" \
-            app/build/outputs/apk/release/app-release.apk \
-            --title "$GITHUB_REF_NAME" \
+            "routina-${GITHUB_REF_NAME}.apk" \
+            --title "Routina ${GITHUB_REF_NAME}" \
             --generate-notes
