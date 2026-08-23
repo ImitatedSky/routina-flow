@@ -128,6 +128,8 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.RecordAudio -> "錄音"
     is Action.PlaySound -> "播放音效"
     is Action.SetAlarm -> "設定鬧鐘"
+    is Action.Text -> "文字"
+    is Action.SetVariable -> "設定變數"
 }
 
 /** 動作積木上的標籤文字（參數欄前的敘述） */
@@ -153,6 +155,8 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.RecordAudio -> "錄音"
     is Action.PlaySound -> "播放"
     is Action.SetAlarm -> "設定鬧鐘"
+    is Action.Text -> "文字"
+    is Action.SetVariable -> "設定變數"
 }
 
 /** 動作積木參數欄的內容 */
@@ -180,6 +184,13 @@ fun actionParamText(action: Action): String = when (action) {
     is Action.RecordAudio -> "${action.seconds} 秒"
     is Action.PlaySound -> soundTypeName(action.type)
     is Action.SetAlarm -> timeLabel(action.hour, action.minute)
+    // 積木參數欄顯示原始 template（含 token 文字），不做即時求值
+    is Action.Text -> truncate(action.template.flattenLines().ifBlank { "未設定" }, 20)
+    is Action.SetVariable -> {
+        val name = action.name.ifBlank { "未命名" }
+        val value = action.template.flattenLines()
+        if (value.isBlank()) name else truncate("$name = $value", 20)
+    }
 }
 
 /** 把多行文字攤成一行（換行改為空格），供單行參數欄顯示 */

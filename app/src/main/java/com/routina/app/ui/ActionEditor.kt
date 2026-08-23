@@ -30,6 +30,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -53,7 +55,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -65,6 +69,7 @@ import com.routina.app.engine.RoutineExecutor
 import com.routina.app.model.Action
 import com.routina.app.model.AppTarget
 import com.routina.app.model.RingerModeType
+import com.routina.app.model.Trigger
 import com.routina.app.model.VolumeStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -72,16 +77,24 @@ import kotlin.math.roundToInt
 
 /**
  * 編輯單一動作的參數。confirm 時回傳更新後的 Action。
+ *
+ * [trigger] 與 [precedingActions] 用來算出「插入變數」清單可用的 token
+ * （觸發提供的、此動作之前設定過的變數）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ActionEditDialog(
     initial: Action,
+    trigger: Trigger,
+    precedingActions: List<Action>,
     onConfirm: (Action) -> Unit,
     onDismiss: () -> Unit
 ) {
     var draft by remember(initial) { mutableStateOf(initial) }
     var showAppPicker by remember { mutableStateOf(false) }
+    val tokenGroups = remember(trigger, precedingActions) {
+        availableTokens(trigger, precedingActions)
+    }
 
     if (showAppPicker) {
         AppPickerDialog(
@@ -102,19 +115,19 @@ fun ActionEditDialog(
         text = {
             when (val current = draft) {
                 is Action.Notify -> Column {
-                    OutlinedTextField(
+                    VariableTextField(
                         value = current.title,
                         onValueChange = { draft = current.copy(title = it) },
-                        label = { Text("標題") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        label = "標題",
+                        tokenGroups = tokenGroups,
+                        singleLine = true
                     )
                     Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
+                    VariableTextField(
                         value = current.message,
                         onValueChange = { draft = current.copy(message = it) },
-                        label = { Text("內容") },
-                        modifier = Modifier.fillMaxWidth()
+                        label = "內容",
+                        tokenGroups = tokenGroups
                     )
                 }
 
@@ -133,26 +146,26 @@ fun ActionEditDialog(
                     }
                 }
 
-                is Action.OpenUrl -> OutlinedTextField(
+                is Action.OpenUrl -> VariableTextField(
                     value = current.url,
                     onValueChange = { draft = current.copy(url = it) },
-                    label = { Text("網址") },
-                    placeholder = { Text("example.com") },
+                    label = "網址",
+                    tokenGroups = tokenGroups,
+                    placeholder = "example.com",
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                    supportingText = { Text("未輸入 scheme 時會自動補上 https://") },
-                    modifier = Modifier.fillMaxWidth()
+                    keyboardType = KeyboardType.Uri,
+                    supportingText = "未輸入 scheme 時會自動補上 https://"
                 )
 
                 is Action.Share -> Column {
-                    OutlinedTextField(
+                    VariableTextField(
                         value = current.text,
                         onValueChange = { draft = current.copy(text = it) },
-                        label = { Text("分享文字") },
-                        placeholder = { Text("要分享的連結或文字") },
+                        label = "分享文字",
+                        tokenGroups = tokenGroups,
+                        placeholder = "要分享的連結或文字",
                         minLines = 3,
-                        maxLines = 6,
-                        modifier = Modifier.fillMaxWidth()
+                        maxLines = 6
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -226,12 +239,12 @@ fun ActionEditDialog(
                 }
 
                 is Action.Speak -> Column {
-                    OutlinedTextField(
+                    VariableTextField(
                         value = current.text,
                         onValueChange = { draft = current.copy(text = it) },
-                        label = { Text("朗讀內容") },
-                        placeholder = { Text("例如：該出門了") },
-                        modifier = Modifier.fillMaxWidth()
+                        label = "朗讀內容",
+                        tokenGroups = tokenGroups,
+                        placeholder = "例如：該出門了"
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -307,22 +320,22 @@ fun ActionEditDialog(
                         onSelect = { draft = current.copy(method = it) }
                     )
                     Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
+                    VariableTextField(
                         value = current.url,
                         onValueChange = { draft = current.copy(url = it) },
-                        label = { Text("網址") },
-                        placeholder = { Text("example.com/hook") },
+                        label = "網址",
+                        tokenGroups = tokenGroups,
+                        placeholder = "example.com/hook",
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                        modifier = Modifier.fillMaxWidth()
+                        keyboardType = KeyboardType.Uri
                     )
                     if (httpMethodName(current.method) == Action.METHOD_POST) {
                         Spacer(Modifier.height(12.dp))
-                        OutlinedTextField(
+                        VariableTextField(
                             value = current.body,
                             onValueChange = { draft = current.copy(body = it) },
-                            label = { Text("內容（純文字，可留空）") },
-                            modifier = Modifier.fillMaxWidth()
+                            label = "內容（純文字，可留空）",
+                            tokenGroups = tokenGroups
                         )
                     }
                     Spacer(Modifier.height(8.dp))
@@ -359,14 +372,14 @@ fun ActionEditDialog(
                 }
 
                 is Action.Clipboard -> Column {
-                    OutlinedTextField(
+                    VariableTextField(
                         value = current.text,
                         onValueChange = { draft = current.copy(text = it) },
-                        label = { Text("要複製的文字") },
-                        placeholder = { Text("例如：會議室 Wi-Fi 密碼") },
+                        label = "要複製的文字",
+                        tokenGroups = tokenGroups,
+                        placeholder = "例如：會議室 Wi-Fi 密碼",
                         minLines = 3,
-                        maxLines = 6,
-                        modifier = Modifier.fillMaxWidth()
+                        maxLines = 6
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -484,13 +497,13 @@ fun ActionEditDialog(
                     }
                     Column {
                         TimeInput(state = timeState)
-                        OutlinedTextField(
+                        VariableTextField(
                             value = current.label,
                             onValueChange = { draft = current.copy(label = it) },
-                            label = { Text("標籤（選填）") },
-                            placeholder = { Text("例如：起床") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            label = "標籤（選填）",
+                            tokenGroups = tokenGroups,
+                            placeholder = "例如：起床",
+                            singleLine = true
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
@@ -500,6 +513,52 @@ fun ActionEditDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+
+                is Action.Text -> Column {
+                    VariableTextField(
+                        value = current.template,
+                        onValueChange = { draft = current.copy(template = it) },
+                        label = "文字內容",
+                        tokenGroups = tokenGroups,
+                        placeholder = "可插入變數，例如：現在 {{時間}}",
+                        minLines = 2,
+                        maxLines = 6
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "產生一段文字作為輸出，後續動作可用 {{result}} 引用" +
+                            "（例如拼好一段訊息再分享出去）。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.SetVariable -> Column {
+                    OutlinedTextField(
+                        value = current.name,
+                        onValueChange = { draft = current.copy(name = it) },
+                        label = { Text("變數名稱") },
+                        placeholder = { Text("例如：問候語") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    VariableTextField(
+                        value = current.template,
+                        onValueChange = { draft = current.copy(template = it) },
+                        label = "變數值",
+                        tokenGroups = tokenGroups,
+                        placeholder = "可插入變數，例如：早安 {{時間}}",
+                        minLines = 2,
+                        maxLines = 6
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "把這段（可含變數的）文字存成變數，之後以 {{var:名稱}} 引用。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         },
@@ -511,6 +570,139 @@ fun ActionEditDialog(
             TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
+}
+
+/** 可插入的一個變數 token（顯示標籤 + 實際插入的字串） */
+data class VarToken(val label: String, val token: String)
+
+/** 「插入變數」清單的一個分類 */
+data class VarTokenGroup(val title: String, val tokens: List<VarToken>)
+
+/**
+ * 算出此動作可插入的變數 token，分成四類：
+ * 觸發提供的、上一個結果、此動作之前設定過的變數、常用（時間/日期/星期/電量）。
+ */
+fun availableTokens(trigger: Trigger, precedingActions: List<Action>): List<VarTokenGroup> =
+    buildList {
+        triggerTokens(trigger).takeIf { it.isNotEmpty() }?.let {
+            add(VarTokenGroup("觸發提供", it))
+        }
+        add(VarTokenGroup("上一個結果", listOf(VarToken("上一個動作的輸出", "{{result}}"))))
+        val varNames = precedingActions.filterIsInstance<Action.SetVariable>()
+            .map { it.name.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+        if (varNames.isNotEmpty()) {
+            add(VarTokenGroup("已設定的變數", varNames.map { VarToken(it, "{{var:$it}}") }))
+        }
+        add(
+            VarTokenGroup(
+                "常用",
+                listOf(
+                    VarToken("時間", "{{時間}}"),
+                    VarToken("日期", "{{日期}}"),
+                    VarToken("星期", "{{星期}}"),
+                    VarToken("電量", "{{電量}}")
+                )
+            )
+        )
+    }
+
+/** 依觸發類型列出它會放進情境的 token */
+private fun triggerTokens(trigger: Trigger): List<VarToken> = when (trigger) {
+    is Trigger.NotificationPosted -> listOf(
+        VarToken("通知標題", "{{通知標題}}"),
+        VarToken("通知內容", "{{通知內容}}"),
+        VarToken("通知來源App", "{{通知來源App}}")
+    )
+
+    is Trigger.LocationEnter, is Trigger.LocationExit ->
+        listOf(VarToken("地點名稱", "{{地點名稱}}"))
+
+    is Trigger.NfcTag -> listOf(VarToken("標籤名稱", "{{標籤名稱}}"))
+    is Trigger.WifiConnected -> listOf(VarToken("Wi-Fi名稱", "{{Wi-Fi名稱}}"))
+    is Trigger.BtConnected, is Trigger.BtDisconnected ->
+        listOf(VarToken("藍牙裝置", "{{藍牙裝置}}"))
+
+    else -> emptyList()
+}
+
+/**
+ * 文字參數欄 + 「插入變數」入口。
+ *
+ * 內部以 [TextFieldValue] 追蹤游標位置，點選清單中的 token 即插入游標處。
+ * 對外仍以純字串回報（[onValueChange]），序列化與既有資料完全不變。
+ */
+@Composable
+fun VariableTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    tokenGroups: List<VarTokenGroup>,
+    modifier: Modifier = Modifier,
+    placeholder: String? = null,
+    singleLine: Boolean = false,
+    minLines: Int = 1,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    supportingText: String? = null
+) {
+    var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
+    // 外部值被程式改動（非本欄輸入）時同步回來；一般輸入時 value 已等於 field.text，不觸發
+    LaunchedEffect(value) {
+        if (value != field.text) field = TextFieldValue(value, TextRange(value.length))
+    }
+    var menuOpen by remember { mutableStateOf(false) }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = field,
+            onValueChange = {
+                field = it
+                onValueChange(it.text)
+            },
+            label = { Text(label) },
+            placeholder = placeholder?.let { { Text(it) } },
+            singleLine = singleLine,
+            minLines = minLines,
+            maxLines = maxLines,
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            supportingText = supportingText?.let { { Text(it) } },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Box {
+            TextButton(onClick = { menuOpen = true }) { Text("＋ 插入變數") }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                tokenGroups.forEach { group ->
+                    Text(
+                        text = group.title,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                    group.tokens.forEach { token ->
+                        DropdownMenuItem(
+                            text = { Text("${token.label}　${token.token}") },
+                            onClick = {
+                                field = insertToken(field, token.token)
+                                onValueChange(field.text)
+                                menuOpen = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 把 [token] 插入目前游標處（或取代選取範圍），並把游標移到插入內容之後 */
+private fun insertToken(field: TextFieldValue, token: String): TextFieldValue {
+    val text = field.text
+    val start = field.selection.start.coerceIn(0, text.length)
+    val end = field.selection.end.coerceIn(0, text.length)
+    val newText = text.replaceRange(start, end, token)
+    return field.copy(text = newText, selection = TextRange(start + token.length))
 }
 
 /**
@@ -781,6 +973,8 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.RecordAudio -> true
     is Action.PlaySound -> true
     is Action.SetAlarm -> true
+    is Action.Text -> action.template.isNotBlank()
+    is Action.SetVariable -> action.name.isNotBlank()
 }
 
 /** 已安裝且可啟動的 App 清單 */

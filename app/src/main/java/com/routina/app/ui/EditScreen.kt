@@ -509,6 +509,9 @@ fun EditScreen(
     editingAction?.let { target ->
         ActionEditDialog(
             initial = target.action,
+            trigger = draft.trigger,
+            // 只有排在這個動作之前的動作才可能提供變數（設定變數）
+            precedingActions = draft.actions.take(target.index),
             onConfirm = { updated ->
                 if (target.index in draft.actions.indices) {
                     draft = draft.copy(

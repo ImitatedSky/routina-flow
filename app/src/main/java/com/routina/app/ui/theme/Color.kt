@@ -83,6 +83,10 @@ object RoutinaColors {
     val ActionWait = Color(0xFF616161)
     val ActionClipboard = Color(0xFF757575)
 
+    // ---------- 動作：變數（藍灰，與流程灰家族相鄰） ----------
+    val ActionText = Color(0xFF546E7A)
+    val ActionSetVariable = Color(0xFF67818C)
+
     // ---------- 執行結果 ----------
     val Success = Color(0xFF2E7D32)
     val Failure = Color(0xFFC62828)
@@ -141,6 +145,8 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.RecordAudio -> RoutinaColors.ActionRecordAudio
     is Action.Wait -> RoutinaColors.ActionWait
     is Action.Clipboard -> RoutinaColors.ActionClipboard
+    is Action.Text -> RoutinaColors.ActionText
+    is Action.SetVariable -> RoutinaColors.ActionSetVariable
 }
 
 /**

@@ -118,7 +118,8 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
         "媒體與擷取",
         listOf(Action.TakePhoto(), Action.BurstPhoto(), Action.RecordAudio())
     ),
-    PaletteGroup("流程", listOf(Action.Wait(), Action.Clipboard()))
+    PaletteGroup("流程", listOf(Action.Wait(), Action.Clipboard())),
+    PaletteGroup("變數", listOf(Action.Text(), Action.SetVariable()))
 )
 
 private const val NO_GMS_HINT =
