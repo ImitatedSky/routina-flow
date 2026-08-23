@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 對外分享的路徑（僅 API ≤28 的擷取路徑會用到；API 29+ 走 MediaStore URI）。
+  - external-path：拍照存入的公開相簿 Pictures/Routina
+  - external-files-path：錄音存入的 App 專屬外部目錄 Music/Routina
+-->
+<paths>
+    <external-path
+        name="capture_pictures"
+        path="Pictures/Routina/" />
+    <external-files-path
+        name="capture_music"
+        path="Music/Routina/" />
+</paths>

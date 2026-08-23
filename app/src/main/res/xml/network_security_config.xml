@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  網路安全設定：一致封鎖明文 HTTP（含 Android 8.0 / API 26、27，該版本系統預設仍允許明文）。
+
+  - base-config cleartextTrafficPermitted="false"：所有網域一律禁止明文流量，
+    HTTP 請求動作因此必須使用 https。地圖圖磚（osmdroid MAPNIK）本就走 https，不受影響。
+  - trust-anchors 只信任 system CA、不含 user CA：避免使用者裝置上被植入的自訂 CA
+    被用來對 App 流量中間人攔截。
+  若需打區網 http 裝置（例如自架 webhook），請自行為該網域新增
+  <domain-config cleartextTrafficPermitted="true"> 例外。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

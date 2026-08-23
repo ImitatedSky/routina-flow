@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Routina" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!--
+      NFC dispatch 用的隱形主題：全透明、無標題列、不變暗背景、不做進出場動畫。
+      掃到標籤時 Activity 只是「收件人」，讀完 UID 立刻 finish，
+      使用者不該看到任何畫面閃一下。
+    -->
+    <style name="Theme.Routina.Invisible" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+</resources>

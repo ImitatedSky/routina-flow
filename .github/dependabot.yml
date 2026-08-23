@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # CI 的 GitHub Actions（追蹤未釘 SHA 的 action 版本更新與安全修補）
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+
+  # Gradle 依賴（追蹤第三方套件的版本更新與 CVE）
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"

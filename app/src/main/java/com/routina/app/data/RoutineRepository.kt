@@ -1,0 +1,168 @@
+package com.routina.app.data
+
+import android.content.Context
+import com.routina.app.model.Routine
+import com.routina.app.model.RunLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import java.io.File
+
+/**
+ * 例行程序與執行紀錄的本地儲存。
+ *
+ * - 以 filesDir 下的 JSON 檔持久化（routines.json / logs.json），不使用資料庫、不連網
+ * - 以 StateFlow 對外提供資料，UI 直接 collect
+ * - 檔案損毀無法解析時以空清單啟動，不崩潰
+ */
+class RoutineRepository private constructor(context: Context) {
+
+    private val appContext = context.applicationContext
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val writeMutex = Mutex()
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+        prettyPrint = false
+    }
+
+    private val routinesFile: File get() = File(appContext.filesDir, FILE_ROUTINES)
+    private val logsFile: File get() = File(appContext.filesDir, FILE_LOGS)
+
+    private val _routines = MutableStateFlow<List<Routine>>(emptyList())
+    val routines: StateFlow<List<Routine>> = _routines.asStateFlow()
+
+    private val _logs = MutableStateFlow<List<RunLog>>(emptyList())
+    val logs: StateFlow<List<RunLog>> = _logs.asStateFlow()
+
+    init {
+        // 資料量小（數十筆），初始化時同步載入，讓 UI 與背景元件第一幀就有正確資料
+        _routines.value = readList(routinesFile, ListSerializer(Routine.serializer()))
+        _logs.value = readList(logsFile, ListSerializer(RunLog.serializer()))
+    }
+
+    // ---------- 讀取 ----------
+
+    fun findById(id: String): Routine? = _routines.value.firstOrNull { it.id == id }
+
+    /** 啟用中且觸發類型需要監測服務的例行程序 */
+    fun enabledRoutines(): List<Routine> = _routines.value.filter { it.enabled }
+
+    private fun <T> readList(file: File, serializer: KSerializer<List<T>>): List<T> = try {
+        if (file.exists()) json.decodeFromString(serializer, file.readText()) else emptyList()
+    } catch (t: Throwable) {
+        // 檔案損毀 / 格式不符 → 以空清單啟動
+        emptyList()
+    }
+
+    // ---------- 例行程序 CRUD ----------
+
+    fun upsert(routine: Routine) {
+        val current = _routines.value
+        val index = current.indexOfFirst { it.id == routine.id }
+        _routines.value = if (index >= 0) {
+            current.toMutableList().apply { this[index] = routine }
+        } else {
+            current + routine
+        }
+        persistRoutines()
+    }
+
+    fun delete(id: String) {
+        _routines.value = _routines.value.filterNot { it.id == id }
+        persistRoutines()
+    }
+
+    fun setEnabled(id: String, enabled: Boolean) {
+        val target = findById(id) ?: return
+        upsert(target.copy(enabled = enabled))
+    }
+
+    // ---------- 執行紀錄 ----------
+
+    fun addLog(log: RunLog) {
+        _logs.value = (listOf(log) + _logs.value).take(MAX_LOGS)
+        persistLogs()
+    }
+
+    fun clearLogs() {
+        _logs.value = emptyList()
+        persistLogs()
+    }
+
+    // ---------- 寫入 ----------
+
+    /**
+     * 落地目前狀態。
+     *
+     * 快照必須在取得鎖之後才讀取：若在鎖外先取快照，兩次連續異動可能以相反順序寫入，
+     * 讓較舊的內容覆蓋較新的內容。在鎖內讀取可保證最後寫入的一定是最新狀態。
+     */
+    private fun persistRoutines() {
+        scope.launch {
+            writeMutex.withLock { writeAtomically(routinesFile, encodeRoutines(_routines.value)) }
+        }
+    }
+
+    private fun persistLogs() {
+        scope.launch {
+            writeMutex.withLock { writeAtomically(logsFile, encodeLogs(_logs.value)) }
+        }
+    }
+
+    private fun encodeRoutines(value: List<Routine>): String =
+        json.encodeToString(ListSerializer(Routine.serializer()), value)
+
+    private fun encodeLogs(value: List<RunLog>): String =
+        json.encodeToString(ListSerializer(RunLog.serializer()), value)
+
+    /**
+     * 背景元件（Receiver / Service）寫入紀錄後行程可能立刻結束，
+     * 需要在返回前確保資料已落地。
+     */
+    fun addLogBlocking(log: RunLog) {
+        _logs.value = (listOf(log) + _logs.value).take(MAX_LOGS)
+        runBlocking {
+            writeMutex.withLock { writeAtomically(logsFile, encodeLogs(_logs.value)) }
+        }
+    }
+
+    /** 呼叫端必須已持有 writeMutex */
+    private fun writeAtomically(target: File, content: String) {
+        try {
+            val tmp = File(target.parentFile, "${target.name}.tmp")
+            tmp.writeText(content)
+            if (!tmp.renameTo(target)) {
+                target.writeText(content)
+                tmp.delete()
+            }
+        } catch (t: Throwable) {
+            // 寫入失敗不影響 App 運作（記憶體內資料仍然正確）
+        }
+    }
+
+    companion object {
+        private const val FILE_ROUTINES = "routines.json"
+        private const val FILE_LOGS = "logs.json"
+        private const val MAX_LOGS = 50
+
+        @Volatile
+        private var instance: RoutineRepository? = null
+
+        fun get(context: Context): RoutineRepository =
+            instance ?: synchronized(this) {
+                instance ?: RoutineRepository(context).also { instance = it }
+            }
+    }
+}

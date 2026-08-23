@@ -1,0 +1,644 @@
+package com.routina.app.model
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import java.util.UUID
+
+/**
+ * 觸發條件。以 kotlinx.serialization 多型序列化（JSON 內以 "type" 欄位判別）。
+ */
+@Serializable
+sealed class Trigger {
+
+    /**
+     * 手動執行：沒有任何自動觸發條件，只透過清單卡片與編輯畫面的 ▶ 手動執行。
+     *
+     * 以「手動」作為一種觸發（sentinel）而非把 trigger 改為 nullable：對既有大量
+     * `when(trigger)` 與非空假設破壞最小，積木隱喻也維持（永遠有一塊帽子積木，只是它說「手動」）。
+     * 手動 routine 不排程、不監測、不耗電，是新建空白 routine 的預設。
+     */
+    @Serializable
+    @SerialName("manual")
+    data object Manual : Trigger()
+
+    /**
+     * 每日定時：時間 + 星期幾（1=週一 … 7=週日，ISO-8601）。空集合視為每天。
+     *
+     * [mode] 為日出 / 日落時忽略 [hour]/[minute]，改以當地日出日落時間加上
+     * [offsetMinutes] 的偏移（負數＝提前）。兩個欄位都有預設值，舊版 JSON 照常讀入。
+     */
+    @Serializable
+    @SerialName("time")
+    data class Time(
+        val hour: Int = 8,
+        val minute: Int = 0,
+        val daysOfWeek: Set<Int> = ALL_DAYS,
+        val mode: TimeMode = TimeMode.FIXED,
+        val offsetMinutes: Int = 0
+    ) : Trigger()
+
+    /** 接上電源 */
+    @Serializable
+    @SerialName("power_connected")
+    data object PowerConnected : Trigger()
+
+    /** 拔除電源 */
+    @Serializable
+    @SerialName("power_disconnected")
+    data object PowerDisconnected : Trigger()
+
+    /** 電量向下穿越門檻 */
+    @Serializable
+    @SerialName("battery_below")
+    data class BatteryBelow(val threshold: Int = 20) : Trigger()
+
+    /** 進入圓形區域（地理圍欄 ENTER） */
+    @Serializable
+    @SerialName("location_enter")
+    data class LocationEnter(
+        val lat: Double = 0.0,
+        val lng: Double = 0.0,
+        val radiusM: Int = DEFAULT_RADIUS_M,
+        val label: String = ""
+    ) : Trigger()
+
+    /** 離開圓形區域（地理圍欄 EXIT） */
+    @Serializable
+    @SerialName("location_exit")
+    data class LocationExit(
+        val lat: Double = 0.0,
+        val lng: Double = 0.0,
+        val radiusM: Int = DEFAULT_RADIUS_M,
+        val label: String = ""
+    ) : Trigger()
+
+    /** 藍牙裝置連接（[deviceAddress] 空字串＝任一裝置） */
+    @Serializable
+    @SerialName("bt_connected")
+    data class BtConnected(
+        val deviceAddress: String = "",
+        val deviceName: String = ""
+    ) : Trigger()
+
+    /** 藍牙裝置斷開（[deviceAddress] 空字串＝任一裝置） */
+    @Serializable
+    @SerialName("bt_disconnected")
+    data class BtDisconnected(
+        val deviceAddress: String = "",
+        val deviceName: String = ""
+    ) : Trigger()
+
+    /** 連上 Wi-Fi（[ssid] 空字串＝任一網路） */
+    @Serializable
+    @SerialName("wifi_connected")
+    data class WifiConnected(val ssid: String = "") : Trigger()
+
+    /** Wi-Fi 斷線 */
+    @Serializable
+    @SerialName("wifi_disconnected")
+    data object WifiDisconnected : Trigger()
+
+    /** 電量向上穿越門檻 */
+    @Serializable
+    @SerialName("battery_above")
+    data class BatteryAbove(val threshold: Int = 80) : Trigger()
+
+    /** 飛航模式切換 */
+    @Serializable
+    @SerialName("airplane_mode")
+    data class AirplaneMode(val turnedOn: Boolean = true) : Trigger()
+
+    /** 勿擾模式切換 */
+    @Serializable
+    @SerialName("dnd_changed")
+    data class DndChanged(val turnedOn: Boolean = true) : Trigger()
+
+    /** 省電模式切換 */
+    @Serializable
+    @SerialName("power_save")
+    data class PowerSave(val turnedOn: Boolean = true) : Trigger()
+
+    /**
+     * 掃描到已登錄的 NFC 標籤。
+     *
+     * [uid] 為標籤的硬體 UID（大寫 hex 字串），在 App 內「掃描標籤」時讀入；
+     * [label] 由使用者自填（例「床頭標籤」），只用於顯示。
+     */
+    @Serializable
+    @SerialName("nfc_tag")
+    data class NfcTag(
+        val uid: String = "",
+        val label: String = ""
+    ) : Trigger()
+
+    /**
+     * 收到通知。
+     *
+     * [packageName] 空字串＝任一 App；[keyword] 空字串＝不過濾內容，
+     * 否則比對通知標題與內容是否包含（不分大小寫）。
+     */
+    @Serializable
+    @SerialName("notification_posted")
+    data class NotificationPosted(
+        val packageName: String = "",
+        val appName: String = "",
+        val keyword: String = ""
+    ) : Trigger()
+
+    /** 指定 App 進入前景（[onOpen] = true）或離開前景（false） */
+    @Serializable
+    @SerialName("app_state")
+    data class AppState(
+        val packageName: String = "",
+        val appName: String = "",
+        val onOpen: Boolean = true
+    ) : Trigger()
+
+    companion object {
+        val ALL_DAYS: Set<Int> = setOf(1, 2, 3, 4, 5, 6, 7)
+
+        /** 地理圍欄半徑範圍（下限為 Geofencing API 的建議最小值） */
+        const val MIN_RADIUS_M = 100
+        const val MAX_RADIUS_M = 1000
+        const val DEFAULT_RADIUS_M = 300
+
+        /** 日出 / 日落偏移分鐘的可設定範圍 */
+        const val MIN_SUN_OFFSET_MIN = -120
+        const val MAX_SUN_OFFSET_MIN = 120
+    }
+}
+
+/** 定時觸發的時間模式 */
+@Serializable
+enum class TimeMode {
+    @SerialName("fixed")
+    FIXED,
+
+    @SerialName("sunrise")
+    SUNRISE,
+
+    @SerialName("sunset")
+    SUNSET
+}
+
+/**
+ * 觸發條件是否需要 MonitorService 常駐監測。
+ *
+ * 不在此列的三種背景觸發各有更省的路徑：藍牙 ACL 廣播屬於隱式廣播豁免清單，
+ * 由 manifest 靜態 receiver 接收；NFC 標籤由系統 dispatch 到 NfcDispatchActivity；
+ * 通知則由系統綁定的 NotificationListenerService 送達——都不需要常駐服務。
+ * App 開啟／關閉沒有對應的系統廣播，只能自行輪詢使用情況，因此必須有服務承載。
+ */
+val Trigger.needsMonitor: Boolean
+    get() = this is Trigger.PowerConnected ||
+        this is Trigger.PowerDisconnected ||
+        this is Trigger.BatteryBelow ||
+        this is Trigger.BatteryAbove ||
+        this is Trigger.WifiConnected ||
+        this is Trigger.WifiDisconnected ||
+        this is Trigger.AirplaneMode ||
+        this is Trigger.DndChanged ||
+        this is Trigger.PowerSave ||
+        this is Trigger.AppState
+
+/** 是否為藍牙裝置觸發（由靜態 ACL receiver 接收） */
+val Trigger.isBluetooth: Boolean
+    get() = this is Trigger.BtConnected || this is Trigger.BtDisconnected
+
+/**
+ * 藍牙觸發指定的裝置（非藍牙觸發為 null）。
+ * [BtDevice.address] 為空字串代表「任一裝置」。
+ */
+data class BtDevice(val address: String, val name: String)
+
+val Trigger.btDevice: BtDevice?
+    get() = when (this) {
+        is Trigger.BtConnected -> BtDevice(deviceAddress, deviceName)
+        is Trigger.BtDisconnected -> BtDevice(deviceAddress, deviceName)
+        else -> null
+    }
+
+/** 回填已配對裝置的選擇結果；非藍牙觸發原樣回傳 */
+fun Trigger.withBtDevice(device: BtDevice): Trigger = when (this) {
+    is Trigger.BtConnected -> copy(deviceAddress = device.address, deviceName = device.name)
+    is Trigger.BtDisconnected -> copy(deviceAddress = device.address, deviceName = device.name)
+    else -> this
+}
+
+/** 電量門檻觸發的門檻值；非電量門檻觸發為 null */
+val Trigger.batteryThreshold: Int?
+    get() = when (this) {
+        is Trigger.BatteryBelow -> threshold
+        is Trigger.BatteryAbove -> threshold
+        else -> null
+    }
+
+fun Trigger.withBatteryThreshold(value: Int): Trigger = when (this) {
+    is Trigger.BatteryBelow -> copy(threshold = value)
+    is Trigger.BatteryAbove -> copy(threshold = value)
+    else -> this
+}
+
+/**
+ * 需要「開啟時／關閉時」二選一參數的觸發；非此類觸發為 null。
+ * App 開啟／關閉也走這裡：參數欄與選擇器的形式完全相同（開啟時／關閉時）。
+ */
+val Trigger.stateTurnedOn: Boolean?
+    get() = when (this) {
+        is Trigger.AirplaneMode -> turnedOn
+        is Trigger.DndChanged -> turnedOn
+        is Trigger.PowerSave -> turnedOn
+        is Trigger.AppState -> onOpen
+        else -> null
+    }
+
+fun Trigger.withStateTurnedOn(turnedOn: Boolean): Trigger = when (this) {
+    is Trigger.AirplaneMode -> copy(turnedOn = turnedOn)
+    is Trigger.DndChanged -> copy(turnedOn = turnedOn)
+    is Trigger.PowerSave -> copy(turnedOn = turnedOn)
+    is Trigger.AppState -> copy(onOpen = turnedOn)
+    else -> this
+}
+
+/**
+ * 觸發指定的 App（[AppTarget.packageName] 為空字串代表尚未選擇，
+ * 通知觸發則以空字串代表「任一 App」）。非 App 相關觸發為 null。
+ */
+data class AppTarget(val packageName: String, val appName: String)
+
+val Trigger.appTarget: AppTarget?
+    get() = when (this) {
+        is Trigger.NotificationPosted -> AppTarget(packageName, appName)
+        is Trigger.AppState -> AppTarget(packageName, appName)
+        else -> null
+    }
+
+/** 回填 App 選擇結果；非 App 相關觸發原樣回傳 */
+fun Trigger.withAppTarget(target: AppTarget): Trigger = when (this) {
+    is Trigger.NotificationPosted ->
+        copy(packageName = target.packageName, appName = target.appName)
+
+    is Trigger.AppState ->
+        copy(packageName = target.packageName, appName = target.appName)
+
+    else -> this
+}
+
+/**
+ * 區域觸發的圓形參數（非序列化，只是把兩種區域觸發的共同欄位攤平，
+ * 讓引擎與 UI 不必到處重複 when 分支）。
+ */
+data class GeoCircle(
+    val lat: Double,
+    val lng: Double,
+    val radiusM: Int,
+    val label: String
+) {
+    /** 使用者是否真的選過地點（尚未選點時經緯度為 0） */
+    val isConfigured: Boolean get() = lat != 0.0 || lng != 0.0
+}
+
+/** 區域觸發的圓形參數；非區域觸發為 null */
+val Trigger.geoCircle: GeoCircle?
+    get() = when (this) {
+        is Trigger.LocationEnter -> GeoCircle(lat, lng, radiusM, label)
+        is Trigger.LocationExit -> GeoCircle(lat, lng, radiusM, label)
+        else -> null
+    }
+
+/** 是否為區域觸發（需要註冊地理圍欄） */
+val Trigger.isLocation: Boolean get() = geoCircle != null
+
+/**
+ * 觸發參數是否已填齊。
+ *
+ * 沒選地點的區域觸發、沒掃過標籤的 NFC 觸發、沒選 App 的 App 觸發存起來也永遠不會觸發，
+ * 編輯畫面用這個判定擋下儲存，免得使用者以為設好了卻等不到執行。
+ * 通知觸發不在此列：空的來源 App 是「任一 App」，空的關鍵字是「不過濾」，都是合法設定。
+ */
+val Trigger.isConfigured: Boolean
+    get() = when (this) {
+        is Trigger.LocationEnter, is Trigger.LocationExit -> geoCircle?.isConfigured == true
+        is Trigger.NfcTag -> uid.isNotBlank()
+        is Trigger.AppState -> packageName.isNotBlank()
+        else -> true
+    }
+
+/** 回填地圖選點結果；非區域觸發原樣回傳 */
+fun Trigger.withGeoCircle(circle: GeoCircle): Trigger = when (this) {
+    is Trigger.LocationEnter -> copy(
+        lat = circle.lat,
+        lng = circle.lng,
+        radiusM = circle.radiusM,
+        label = circle.label
+    )
+
+    is Trigger.LocationExit -> copy(
+        lat = circle.lat,
+        lng = circle.lng,
+        radiusM = circle.radiusM,
+        label = circle.label
+    )
+
+    else -> this
+}
+
+/**
+ * 動作。
+ */
+@Serializable
+sealed class Action {
+
+    /** 顯示通知 */
+    @Serializable
+    @SerialName("notify")
+    data class Notify(
+        val title: String = "",
+        val message: String = ""
+    ) : Action()
+
+    /** 開啟指定 App */
+    @Serializable
+    @SerialName("open_app")
+    data class OpenApp(
+        val packageName: String = "",
+        val appLabel: String = ""
+    ) : Action()
+
+    /** 以瀏覽器開啟網址 */
+    @Serializable
+    @SerialName("open_url")
+    data class OpenUrl(val url: String = "") : Action()
+
+    /**
+     * 分享：透過系統分享選單（ACTION_SEND）把文字（連結或任意文字）送出，
+     * 由使用者當下選擇要分享到哪個 App／給誰。
+     *
+     * 背景觸發時系統禁止背景啟動 Activity，沿用「開啟 App／網址」的 launchOrNotify 降級：
+     * 改發一則可點擊通知，點擊後才跳出分享選單（見 RoutineExecutor）。
+     * 文字為空時記為失敗（無可分享內容）。
+     */
+    @Serializable
+    @SerialName("share")
+    data class Share(val text: String = "") : Action()
+
+    /** 設定音量（0–100%）。[stream] 有預設值，舊版只設媒體音量的 JSON 照常讀入。 */
+    @Serializable
+    @SerialName("media_volume")
+    data class MediaVolume(
+        val percent: Int = 50,
+        val stream: VolumeStream = VolumeStream.MEDIA
+    ) : Action()
+
+    /** 切換響鈴模式 */
+    @Serializable
+    @SerialName("ringer_mode")
+    data class RingerMode(val mode: RingerModeType = RingerModeType.NORMAL) : Action()
+
+    /** 開啟／關閉藍牙（Android 13+ 只能發通知帶出系統確認） */
+    @Serializable
+    @SerialName("bluetooth")
+    data class Bluetooth(val enable: Boolean = true) : Action()
+
+    /** 手電筒開／關 */
+    @Serializable
+    @SerialName("flashlight")
+    data class Flashlight(val on: Boolean = true) : Action()
+
+    /** 以系統 TTS 朗讀文字 */
+    @Serializable
+    @SerialName("speak")
+    data class Speak(val text: String = "") : Action()
+
+    /** 震動指定毫秒（100–3000） */
+    @Serializable
+    @SerialName("vibrate")
+    data class Vibrate(val millis: Int = 500) : Action()
+
+    /** 勿擾模式開／關 */
+    @Serializable
+    @SerialName("dnd")
+    data class Dnd(val on: Boolean = true) : Action()
+
+    /** 螢幕亮度（0–100%），需要「修改系統設定」權限 */
+    @Serializable
+    @SerialName("brightness")
+    data class Brightness(val percent: Int = 50) : Action()
+
+    /** HTTP 請求（webhook）：GET 或 POST，body 為純文字 */
+    @Serializable
+    @SerialName("http")
+    data class Http(
+        val url: String = "",
+        val method: String = METHOD_GET,
+        val body: String = ""
+    ) : Action()
+
+    /** 播放控制：以系統媒體按鍵事件送出 */
+    @Serializable
+    @SerialName("media_key")
+    data class MediaKey(val key: String = KEY_PLAY_PAUSE) : Action()
+
+    /** 等待 N 秒（1–30）後再執行後續動作 */
+    @Serializable
+    @SerialName("wait")
+    data class Wait(val seconds: Int = 3) : Action()
+
+    /**
+     * 把文字複製到系統剪貼簿。
+     *
+     * Android 10 起系統只允許前景 App 寫入剪貼簿，背景寫入在部分版本／廠牌會被
+     * 靜默忽略（見 RoutineExecutor 的說明），因此背景觸發只能盡力而為並誠實記錄。
+     */
+    @Serializable
+    @SerialName("clipboard")
+    data class Clipboard(val text: String = "") : Action()
+
+    /**
+     * 拍照：以選定鏡頭（[lensBack] true＝後鏡頭）擷取一張相片存入相簿。
+     *
+     * Android 9+ 禁止背景存取相機，只有前景（手動執行）或掛上 camera 類前景服務
+     * 才能拍照；背景觸發被系統擋下時記為失敗並誠實註明（見 RoutineExecutor）。
+     */
+    @Serializable
+    @SerialName("take_photo")
+    data class TakePhoto(
+        val lensBack: Boolean = true,
+        @SerialName("notify") val notify: Boolean = true
+    ) : Action()
+
+    /** 連拍：以選定鏡頭連續擷取 [count] 張（2–10）、每張間隔 [intervalMs] 毫秒（200–2000） */
+    @Serializable
+    @SerialName("burst_photo")
+    data class BurstPhoto(
+        val lensBack: Boolean = true,
+        val count: Int = 3,
+        val intervalMs: Int = 500,
+        @SerialName("notify") val notify: Boolean = true
+    ) : Action()
+
+    /** 錄音：錄製 [seconds] 秒（1–60）音訊存檔（受背景麥克風限制，同拍照） */
+    @Serializable
+    @SerialName("record_audio")
+    data class RecordAudio(
+        val seconds: Int = 5,
+        @SerialName("notify") val notify: Boolean = true
+    ) : Action()
+
+    /** 播放系統音效（[type]：NOTIFICATION／ALARM／RINGTONE），無額外權限需求 */
+    @Serializable
+    @SerialName("play_sound")
+    data class PlaySound(val type: String = SOUND_NOTIFICATION) : Action()
+
+    /** 以系統時鐘 App 設定一個 [hour]:[minute] 的鬧鐘，標籤為 [label] */
+    @Serializable
+    @SerialName("set_alarm")
+    data class SetAlarm(
+        val hour: Int = 8,
+        val minute: Int = 0,
+        val label: String = ""
+    ) : Action()
+
+    companion object {
+        const val METHOD_GET = "GET"
+        const val METHOD_POST = "POST"
+        val HTTP_METHODS = listOf(METHOD_GET, METHOD_POST)
+
+        const val KEY_PLAY_PAUSE = "PLAY_PAUSE"
+        const val KEY_NEXT = "NEXT"
+        const val KEY_PREVIOUS = "PREVIOUS"
+        val MEDIA_KEYS = listOf(KEY_PLAY_PAUSE, KEY_NEXT, KEY_PREVIOUS)
+
+        const val MIN_VIBRATE_MS = 100
+        const val MAX_VIBRATE_MS = 3000
+        const val MIN_WAIT_SECONDS = 1
+        const val MAX_WAIT_SECONDS = 30
+
+        /** 連拍張數範圍 */
+        const val MIN_BURST_COUNT = 2
+        const val MAX_BURST_COUNT = 10
+
+        /** 連拍間隔範圍（毫秒） */
+        const val MIN_BURST_INTERVAL_MS = 200
+        const val MAX_BURST_INTERVAL_MS = 2000
+
+        /** 錄音秒數範圍 */
+        const val MIN_RECORD_SECONDS = 1
+        const val MAX_RECORD_SECONDS = 60
+
+        /** 播放音效的系統音效類型 */
+        const val SOUND_NOTIFICATION = "NOTIFICATION"
+        const val SOUND_ALARM = "ALARM"
+        const val SOUND_RINGTONE = "RINGTONE"
+        val SOUND_TYPES = listOf(SOUND_NOTIFICATION, SOUND_ALARM, SOUND_RINGTONE)
+    }
+}
+
+@Serializable
+enum class RingerModeType {
+    @SerialName("normal")
+    NORMAL,
+
+    @SerialName("vibrate")
+    VIBRATE,
+
+    @SerialName("silent")
+    SILENT
+}
+
+/** 音量串流 */
+@Serializable
+enum class VolumeStream {
+    @SerialName("media")
+    MEDIA,
+
+    @SerialName("ring")
+    RING,
+
+    @SerialName("alarm")
+    ALARM,
+
+    @SerialName("notification")
+    NOTIFICATION
+}
+
+/** 是否為等待動作（前景服務外的降級路徑會跳過） */
+val Action.isWait: Boolean get() = this is Action.Wait
+
+/**
+ * 一個例行程序：一個觸發條件 + 一至多個動作。
+ */
+@Serializable
+data class Routine(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String = "",
+    val enabled: Boolean = true,
+    val trigger: Trigger = Trigger.Time(),
+    val actions: List<Action> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    /** AlarmManager PendingIntent 的 requestCode：由 id 推導，穩定且不衝突。 */
+    val alarmRequestCode: Int get() = id.hashCode()
+}
+
+/** 觸發來源 */
+@Serializable
+enum class TriggerSource {
+    @SerialName("schedule")
+    SCHEDULE,
+
+    @SerialName("power")
+    POWER,
+
+    @SerialName("battery")
+    BATTERY,
+
+    @SerialName("location")
+    LOCATION,
+
+    @SerialName("bluetooth")
+    BLUETOOTH,
+
+    @SerialName("wifi")
+    WIFI,
+
+    @SerialName("system")
+    SYSTEM,
+
+    @SerialName("nfc")
+    NFC,
+
+    @SerialName("notification")
+    NOTIFICATION,
+
+    @SerialName("app")
+    APP,
+
+    @SerialName("manual")
+    MANUAL
+}
+
+/** 單一動作的執行結果 */
+@Serializable
+data class ActionResult(
+    val description: String,
+    val success: Boolean,
+    val error: String? = null
+)
+
+/** 一次執行的紀錄 */
+@Serializable
+data class RunLog(
+    val id: String = UUID.randomUUID().toString(),
+    val routineId: String = "",
+    val routineName: String = "",
+    val timestamp: Long = System.currentTimeMillis(),
+    val source: TriggerSource = TriggerSource.MANUAL,
+    val results: List<ActionResult> = emptyList(),
+    /** 執行環境的補充說明（例如前景執行服務啟不起來而降級） */
+    val note: String? = null
+) {
+    val allSucceeded: Boolean get() = results.isNotEmpty() && results.all { it.success }
+    val allFailed: Boolean get() = results.isNotEmpty() && results.none { it.success }
+    val failureCount: Int get() = results.count { !it.success }
+}

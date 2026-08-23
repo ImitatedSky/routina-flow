@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  備份排除規則（Android 11 / API 30 以下的 Auto Backup）。
+
+  與 data_extraction_rules.xml 同一目的：App 資料含 webhook token、剪貼簿與朗讀
+  全文、地理座標、藍牙 MAC、NFC UID 等敏感值，不應被雲端／adb 備份帶出。
+  android:allowBackup 已為 false 時本規則不會生效，但仍全面排除作為縱深防禦。
+-->
+<full-backup-content>
+    <exclude domain="root" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="external" path="." />
+</full-backup-content>

@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- 拍照 / 錄音動作背景執行時掛對應類型的前景服務（Android 14+） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- 震動動作 -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- 螢幕亮度動作（特殊權限，需使用者在系統設定手動開啟） -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <!-- 背景觸發時直接開啟 App / 網址（Android 10+ 的背景啟動 Activity 限制） -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- 拍照 / 連拍動作 -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 錄音動作 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- 設定鬧鐘動作（normal 權限，安裝時自動授予） -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <!-- 拍照存公開相簿（Android 9 以下；API 29+ 改用 MediaStore 免權限） -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <!--
+      拍照 / 連拍需要相機硬體、錄音需要麥克風；required=false → 沒有該硬體的裝置
+      照樣能安裝，動作在執行時記為失敗（不影響其他功能）。
+    -->
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
+
+    <!-- 地圖選點：osmdroid 下載 OpenStreetMap 圖磚 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- 區域觸發：地理圍欄（背景位置＝Android 10+ 的「一律允許」） -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!-- 藍牙動作：Android 12+ 用 BLUETOOTH_CONNECT，之前用舊的一組 -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+
+    <!--
+      NFC 標籤觸發：讀取標籤 UID。
+      uses-feature required=false → 沒有 NFC 硬體的裝置照樣能安裝，
+      該觸發在調色盤上標示為不可用（其他功能不受影響）。
+    -->
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature
+        android:name="android.hardware.nfc"
+        android:required="false" />
+
+    <!--
+      App 開啟／關閉觸發：讀取使用情況統計判斷前景 App。
+      特殊權限，只能由使用者在系統設定「具有使用權限的應用程式」中開啟，
+      因此 lint 的 ProtectedPermissions 警告在此是預期行為。
+    -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- 「開啟 App」動作、通知觸發與 App 觸發都需要列出可啟動的 App -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <!-- 「設定鬧鐘」動作：Android 11+ 需宣告可見性才能 resolve / 啟動時鐘 App -->
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".RoutinaApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Routina">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Routina">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          NFC 標籤掃描的背景入口：系統把 NFC dispatch 送到一個 Activity，
+          這個 Activity 用全透明主題、讀完 UID 就 finish()，使用者只會看到動作被執行，
+          不會看到任何畫面（noHistory + excludeFromRecents 確保不留在返回堆疊與最近使用）。
+
+          TECH_DISCOVERED 是主要路徑（涵蓋所有標籤，且只在沒有 App 處理 NDEF 時才派送，
+          不會搶走其他 App 的標籤）；NDEF_DISCOVERED 為備援，讓已寫入 NDEF 內容的標籤
+          也能當觸發器用。
+        -->
+        <activity
+            android:name=".engine.NfcDispatchActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Routina.Invisible">
+            <intent-filter>
+                <action android:name="android.nfc.action.TECH_DISCOVERED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.nfc.action.TECH_DISCOVERED"
+                android:resource="@xml/nfc_tech_filter" />
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <!--
+              寫入過的標籤（routina://tag/{uid}）：系統以 URI 精準比對，
+              只有 Routina 符合 → 掃描不會跳出 App 選擇器，直接執行對應的例行程序。
+            -->
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data
+                    android:host="tag"
+                    android:scheme="routina" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          通知觸發：由系統綁定的通知監聽服務，需要使用者在「通知存取權」中開啟。
+          系統負責啟停 → 通知觸發不需要任何常駐服務。
+        -->
+        <service
+            android:name=".engine.RoutinaNotificationListener"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!--
+          擷取結果通知的點擊開啟：API ≤28 拍照 / 錄音存的檔案是 file://，
+          必須用 FileProvider 產生可授權讀取的 content URI 才能交給系統檢視器。
+          僅 API ≤28 路徑用得到，但 provider 宣告不分版本。
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <service
+            android:name=".engine.MonitorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="automation" />
+        </service>
+
+        <!--
+          觸發後的動作執行：短生命週期前景服務，解除廣播接收器的 10 秒時限。
+          平時以 specialUse 類型運行；執行拍照／錄音動作前臨時切換到 camera／microphone
+          類型（Android 9+ 存取相機麥克風的前提），動作做完再還原回 specialUse。
+        -->
+        <service
+            android:name=".engine.ExecutionService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse|camera|microphone">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="automation" />
+        </service>
+
+        <receiver
+            android:name=".engine.AlarmReceiver"
+            android:exported="false" />
+
+        <!--
+          藍牙連接 / 斷開：ACL_CONNECTED / ACL_DISCONNECTED 屬於隱式廣播的豁免清單，
+          可以靜態註冊，因此藍牙觸發不需要任何常駐服務。
+        -->
+        <receiver
+            android:name=".engine.BtAclReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 地理圍欄轉換事件由 Play Services 以 PendingIntent 送達 -->
+        <receiver
+            android:name=".engine.GeofenceReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".engine.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>

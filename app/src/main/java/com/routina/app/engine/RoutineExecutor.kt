@@ -1,0 +1,1073 @@
+package com.routina.app.engine
+
+import android.Manifest
+import android.app.Activity
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.media.AudioManager
+import android.media.RingtoneManager
+import android.net.Uri
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.provider.AlarmClock
+import android.provider.Settings
+import android.view.KeyEvent
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.routina.app.R
+import com.routina.app.RoutinaApp
+import com.routina.app.data.RoutineRepository
+import com.routina.app.model.Action
+import com.routina.app.model.ActionResult
+import com.routina.app.model.RingerModeType
+import com.routina.app.model.Routine
+import com.routina.app.model.RunLog
+import com.routina.app.model.TriggerSource
+import com.routina.app.model.VolumeStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.roundToInt
+
+/**
+ * 依序執行例行程序的所有動作。
+ *
+ * 規則：動作依加入順序執行，單一動作失敗不中斷其餘動作，
+ * 最後把每個動作的成敗寫入 RunLog。
+ *
+ * 執行本身是 suspend 函式：等待、朗讀、HTTP 等長時動作需要協程才能在不阻塞
+ * 主執行緒的前提下完成（背景觸發時由 [ExecutionService] 承載）。
+ */
+object RoutineExecutor {
+
+    /**
+     * 前景服務類型切換：讓引擎在拍照／錄音前，把宿主前景服務切到 camera／microphone 類型
+     * （Android 9+ 存取相機麥克風、Android 14+ 背景啟動該類前景服務的前提）。
+     *
+     * 手動執行（App 在前景、無執行服務）時傳 null：直接嘗試即可。背景觸發由 [ExecutionService]
+     * 提供實作；[switchTo] 回傳 false 代表系統擋下了背景相機／麥克風，動作應記為受限失敗。
+     */
+    interface ForegroundTypeSwitch {
+        /** @return 是否已成功以指定類型進入前景 */
+        fun switchTo(type: CaptureFgsType): Boolean
+
+        /** 動作完成後還原回預設（specialUse）類型 */
+        fun restore()
+    }
+
+    /** 需要專屬前景服務類型的擷取動作硬體 */
+    enum class CaptureFgsType { CAMERA, MICROPHONE }
+
+    /**
+     * @param persistBlocking 背景元件（Receiver）觸發時為 true：
+     * 行程可能在返回後立即被回收，必須確保紀錄已寫入磁碟。
+     * 由 UI 手動執行或長駐服務觸發時為 false，避免不必要的同步 I/O。
+     * @param allowWait 是否執行「等待」動作。前景執行服務啟動失敗而降級為
+     * 接收器內同步執行時為 false（廣播接收器有時限，不能等）。
+     * @param note 執行環境的補充說明，會寫進 RunLog（例如降級執行）。
+     * @param fgsSwitch 拍照／錄音動作用的前景服務類型切換；手動執行為 null。
+     * @return 這次執行的紀錄（呼叫端可據此顯示結果）
+     */
+    suspend fun execute(
+        context: Context,
+        routine: Routine,
+        source: TriggerSource,
+        persistBlocking: Boolean = false,
+        allowWait: Boolean = true,
+        note: String? = null,
+        fgsSwitch: ForegroundTypeSwitch? = null
+    ): RunLog {
+        val appContext = context.applicationContext
+        // Android 10+ 起，從 Receiver / Service 呼叫 startActivity 會被系統靜默丟棄
+        // （不丟例外）。只有下列情境能真正把 Activity 帶到前景：
+        // 手動執行、由 Activity context 呼叫、或已取得「顯示在其他應用程式上層」權限。
+        val canLaunchActivity = source == TriggerSource.MANUAL ||
+            context is Activity ||
+            canDrawOverlays(appContext)
+
+        val results = routine.actions.mapIndexed { index, action ->
+            runAction(
+                appContext, routine, index, action, source, canLaunchActivity, allowWait, fgsSwitch
+            )
+        }
+
+        val log = RunLog(
+            routineId = routine.id,
+            routineName = routine.name,
+            source = source,
+            results = results,
+            note = note
+        )
+        val repository = RoutineRepository.get(appContext)
+        if (persistBlocking) repository.addLogBlocking(log) else repository.addLog(log)
+        return log
+    }
+
+    /**
+     * 執行單一動作。動作函式回傳非 null 字串時視為補充說明，
+     * 會附加在紀錄的描述後面（例如背景無法直接啟動而改以通知呈現）。
+     */
+    private suspend fun runAction(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action,
+        source: TriggerSource,
+        canLaunchActivity: Boolean,
+        allowWait: Boolean,
+        fgsSwitch: ForegroundTypeSwitch?
+    ): ActionResult {
+        val description = describe(context, action)
+        return try {
+            val note = when (action) {
+                is Action.Notify -> doNotify(context, routine, index, action)
+                is Action.OpenApp -> doOpenApp(context, routine, index, action, canLaunchActivity)
+                is Action.OpenUrl -> doOpenUrl(context, routine, index, action, canLaunchActivity)
+                is Action.Share -> doShare(context, routine, index, action, canLaunchActivity)
+                is Action.MediaVolume -> doMediaVolume(context, action)
+                is Action.RingerMode -> doRingerMode(context, action)
+                is Action.Bluetooth -> doBluetooth(context, routine, index, action)
+                is Action.Flashlight -> doFlashlight(context, action)
+                is Action.Speak -> doSpeak(context, action)
+                is Action.Vibrate -> doVibrate(context, action)
+                is Action.Dnd -> doDnd(context, action)
+                is Action.Brightness -> doBrightness(context, action)
+                is Action.Http -> doHttp(action)
+                is Action.MediaKey -> doMediaKey(context, action)
+                is Action.Wait -> doWait(action, allowWait)
+                is Action.Clipboard -> doClipboard(context, action, source)
+                is Action.TakePhoto -> doTakePhoto(context, action, fgsSwitch)
+                is Action.BurstPhoto -> doBurstPhoto(context, action, fgsSwitch)
+                is Action.RecordAudio -> doRecordAudio(context, action, fgsSwitch)
+                is Action.PlaySound -> doPlaySound(context, action)
+                is Action.SetAlarm -> doSetAlarm(context, routine, index, action, canLaunchActivity)
+            }
+            ActionResult(if (note == null) description else "$description（$note）", true)
+        } catch (t: Throwable) {
+            ActionResult(description, false, t.message ?: t.javaClass.simpleName)
+        }
+    }
+
+    // ---------- 個別動作 ----------
+
+    private fun doNotify(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.Notify
+    ): String? {
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled()) {
+            error("未授權通知權限，無法顯示通知")
+        }
+        val notification = NotificationCompat.Builder(context, RoutinaApp.CHANNEL_ACTIONS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(action.title.ifBlank { "Routina" })
+            .setContentText(action.message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(action.message))
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+        manager.notify(notificationId(routine.id, index), notification)
+        return null
+    }
+
+    private fun doOpenApp(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.OpenApp,
+        canLaunchActivity: Boolean
+    ): String? {
+        require(action.packageName.isNotBlank()) { "未選擇 App" }
+        val label = action.appLabel.ifBlank { action.packageName }
+        val intent = context.packageManager.getLaunchIntentForPackage(action.packageName)
+            ?: error("找不到 App：$label")
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return launchOrNotify(context, routine, index, intent, "開啟 $label", canLaunchActivity)
+    }
+
+    private fun doOpenUrl(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.OpenUrl,
+        canLaunchActivity: Boolean
+    ): String? {
+        val normalized = normalizeUrl(action.url)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(normalized))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return launchOrNotify(context, routine, index, intent, "開啟 $normalized", canLaunchActivity)
+    }
+
+    /**
+     * 分享：以系統分享選單（ACTION_SEND + createChooser）把文字送出，由使用者當下選對象。
+     * 沿用「開啟 App／網址」的背景 Activity 啟動處理——前景直接跳出選單、背景改發可點擊通知。
+     * 文字為空時記失敗（無可分享內容），不崩潰。
+     */
+    private fun doShare(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.Share,
+        canLaunchActivity: Boolean
+    ): String? {
+        require(action.text.isNotBlank()) { "沒有可分享的內容" }
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, action.text)
+        }
+        // 由 application context 啟動 Activity（含 chooser）一律需要 NEW_TASK，比照開啟網址
+        val chooser = Intent.createChooser(send, "分享")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return launchOrNotify(context, routine, index, chooser, "分享", canLaunchActivity, verb = "分享")
+    }
+
+    /**
+     * 能直接啟動就直接啟動；否則改發一則可點擊[verb]的高優先度通知，
+     * 並另發一則引導使用者授權「顯示在其他應用程式上層」的通知。
+     *
+     * [verb] 為通知文案的動詞（「開啟」/「分享」），讓開啟與分享共用同一條前景/背景分流。
+     */
+    private fun launchOrNotify(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        intent: Intent,
+        title: String,
+        canLaunchActivity: Boolean,
+        verb: String = "開啟"
+    ): String? {
+        if (canLaunchActivity) {
+            context.startActivity(intent)
+            return null
+        }
+
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled()) {
+            error("背景無法直接啟動，且未授權通知權限")
+        }
+        val id = notificationId(routine.id, index)
+        val pending = PendingIntent.getActivity(
+            context,
+            id,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        ) ?: error("無法建立啟動用的 PendingIntent")
+
+        val notification = NotificationCompat.Builder(context, RoutinaApp.CHANNEL_LAUNCH)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText("來自「${routine.name.ifBlank { "例行程序" }}」，點擊$verb")
+            .setContentIntent(pending)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        manager.notify(id, notification)
+        notifyOverlayPermissionNeeded(context)
+        return "已改以通知呈現，點擊$verb"
+    }
+
+    private fun doMediaVolume(context: Context, action: Action.MediaVolume): String? {
+        val audio = context.getSystemService(AudioManager::class.java)
+            ?: error("無法取得音訊服務")
+        val stream = audioStream(action.stream)
+        val max = audio.getStreamMaxVolume(stream)
+        val target = (max * action.percent.coerceIn(0, 100) / 100f).roundToInt().coerceIn(0, max)
+        try {
+            audio.setStreamVolume(stream, target, 0)
+        } catch (t: SecurityException) {
+            // 勿擾模式下調整鈴聲 / 通知音量需要勿擾模式存取權
+            notifyDndPermissionNeeded(context)
+            error("勿擾模式下需要勿擾模式存取權，已發送授權引導通知")
+        }
+        return null
+    }
+
+    private fun doRingerMode(context: Context, action: Action.RingerMode): String? {
+        val audio = context.getSystemService(AudioManager::class.java)
+            ?: error("無法取得音訊服務")
+        // 只有切換為靜音 / 震動需要「勿擾模式存取權」；切回正常模式直接嘗試即可
+        if (action.mode != RingerModeType.NORMAL) {
+            requireDndAccess(context, "切換響鈴模式")
+        }
+        val target = when (action.mode) {
+            RingerModeType.NORMAL -> AudioManager.RINGER_MODE_NORMAL
+            RingerModeType.VIBRATE -> AudioManager.RINGER_MODE_VIBRATE
+            RingerModeType.SILENT -> AudioManager.RINGER_MODE_SILENT
+        }
+        try {
+            audio.ringerMode = target
+        } catch (t: Throwable) {
+            // 部分機型即使切回正常模式也要求勿擾模式存取權
+            notifyDndPermissionNeeded(context)
+            error("切換響鈴模式失敗：${t.message ?: t.javaClass.simpleName}")
+        }
+        return null
+    }
+
+    /**
+     * 藍牙開關。
+     *
+     * Android 13 起系統禁止第三方 App 直接切換藍牙，只能發通知把使用者帶到
+     * 系統的確認對話框／設定頁——絕不記成假成功，描述會註明需經系統確認。
+     */
+    private fun doBluetooth(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.Bluetooth
+    ): String? {
+        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
+            ?: error("此裝置不支援藍牙")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return requestBluetoothViaNotification(context, routine, index, action)
+        }
+
+        if (!hasBluetoothConnect(context)) {
+            notifyBluetoothPermissionNeeded(context)
+            error("缺少藍牙權限，已發送授權引導通知")
+        }
+
+        val started = try {
+            @Suppress("DEPRECATION")
+            if (action.enable) adapter.enable() else adapter.disable()
+        } catch (t: SecurityException) {
+            notifyBluetoothPermissionNeeded(context)
+            error("缺少藍牙權限，已發送授權引導通知")
+        }
+        if (!started) error("系統拒絕切換藍牙")
+        return null
+    }
+
+    /** 手電筒：取第一個有閃光燈的鏡頭（通常是主鏡頭） */
+    private fun doFlashlight(context: Context, action: Action.Flashlight): String? {
+        val manager = context.getSystemService(CameraManager::class.java)
+            ?: error("無法取得相機服務")
+        val cameraId = manager.cameraIdList.firstOrNull { id ->
+            manager.getCameraCharacteristics(id)
+                .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+        } ?: error("此裝置沒有可用的手電筒")
+        manager.setTorchMode(cameraId, action.on)
+        return null
+    }
+
+    /** 朗讀文字：等到朗讀完成（或逾時 30 秒）才進行下一個動作 */
+    private suspend fun doSpeak(context: Context, action: Action.Speak): String? {
+        TtsSpeaker.speak(context, action.text.trim())
+        return null
+    }
+
+    private fun doVibrate(context: Context, action: Action.Vibrate): String? {
+        val millis = action.millis
+            .coerceIn(Action.MIN_VIBRATE_MS, Action.MAX_VIBRATE_MS)
+            .toLong()
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            context.getSystemService(Vibrator::class.java)
+        } ?: error("此裝置沒有震動器")
+        if (!vibrator.hasVibrator()) error("此裝置沒有震動器")
+        vibrator.vibrate(
+            VibrationEffect.createOneShot(millis, VibrationEffect.DEFAULT_AMPLITUDE)
+        )
+        return null
+    }
+
+    /** 勿擾模式：開啟＝只允許優先通知，關閉＝全部通知 */
+    private fun doDnd(context: Context, action: Action.Dnd): String? {
+        val manager = requireDndAccess(context, "切換勿擾模式")
+        manager.setInterruptionFilter(
+            if (action.on) {
+                NotificationManager.INTERRUPTION_FILTER_PRIORITY
+            } else {
+                NotificationManager.INTERRUPTION_FILTER_ALL
+            }
+        )
+        return null
+    }
+
+    /**
+     * 螢幕亮度：只寫亮度值，不動「自動亮度」旗標
+     * （使用者開著自動亮度時，系統會在下一次環境光變化時接手，這是預期行為）。
+     */
+    private fun doBrightness(context: Context, action: Action.Brightness): String? {
+        if (!canWriteSettings(context)) {
+            notifyWriteSettingsNeeded(context)
+            error("缺少「修改系統設定」權限，已發送授權引導通知")
+        }
+        val value = (MAX_BRIGHTNESS * action.percent.coerceIn(0, 100) / 100f)
+            .roundToInt()
+            .coerceIn(0, MAX_BRIGHTNESS)
+        val written = Settings.System.putInt(
+            context.contentResolver,
+            Settings.System.SCREEN_BRIGHTNESS,
+            value
+        )
+        if (!written) error("系統拒絕寫入亮度設定")
+        return null
+    }
+
+    /** HTTP 請求（webhook）：連線 / 讀取各 10 秒逾時，2xx 視為成功 */
+    private suspend fun doHttp(action: Action.Http): String = withContext(Dispatchers.IO) {
+        val normalized = normalizeUrl(action.url)
+        val method = if (action.method.equals(Action.METHOD_POST, ignoreCase = true)) {
+            Action.METHOD_POST
+        } else {
+            Action.METHOD_GET
+        }
+
+        val connection = (URL(normalized).openConnection() as HttpURLConnection).apply {
+            connectTimeout = HTTP_TIMEOUT_MS
+            readTimeout = HTTP_TIMEOUT_MS
+            requestMethod = method
+            instanceFollowRedirects = true
+        }
+        try {
+            if (method == Action.METHOD_POST) {
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+                connection.outputStream.use { it.write(action.body.toByteArray(Charsets.UTF_8)) }
+            }
+            val code = connection.responseCode
+            // 回應內容不保留，但必須讀完（或關閉）才能讓連線正確回收
+            runCatching {
+                (if (code in 200..299) connection.inputStream else connection.errorStream)
+                    ?.use { it.readBytes() }
+            }
+            if (code !in 200..299) error("HTTP $code")
+            "HTTP $code"
+        } finally {
+            runCatching { connection.disconnect() }
+        }
+    }
+
+    /** 播放控制：送出成對的媒體按鍵事件（按下 + 放開） */
+    private fun doMediaKey(context: Context, action: Action.MediaKey): String? {
+        val audio = context.getSystemService(AudioManager::class.java)
+            ?: error("無法取得音訊服務")
+        val keyCode = when (action.key) {
+            Action.KEY_NEXT -> KeyEvent.KEYCODE_MEDIA_NEXT
+            Action.KEY_PREVIOUS -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+            else -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+        }
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+        return null
+    }
+
+    /** 等待：只有在前景執行服務或手動執行時才真的等 */
+    private suspend fun doWait(action: Action.Wait, allowWait: Boolean): String? {
+        if (!allowWait) return "前景執行服務不可用，已跳過等待"
+        val seconds = action.seconds.coerceIn(Action.MIN_WAIT_SECONDS, Action.MAX_WAIT_SECONDS)
+        delay(seconds * 1000L)
+        return null
+    }
+
+    /**
+     * 複製到剪貼簿。
+     *
+     * Android 10 起系統只允許前景（或擁有輸入法／無障礙身分）的 App 寫入剪貼簿。
+     * 背景寫入被擋下時系統**不會丟例外也不會回報**，完全無從偵測，
+     * 所以這裡的策略是誠實面對：手動執行（App 在前景）一律生效；
+     * 背景觸發照常呼叫並記為成功，但在描述加註可能被系統忽略——
+     * 絕不宣稱「一定寫進去了」，也不因為偵測不到就記成失敗。
+     * API 33 起系統會顯示「已複製」浮層，使用者自己就能確認。
+     */
+    private fun doClipboard(
+        context: Context,
+        action: Action.Clipboard,
+        source: TriggerSource
+    ): String? {
+        val manager = context.getSystemService(ClipboardManager::class.java)
+            ?: error("無法取得剪貼簿服務")
+        manager.setPrimaryClip(ClipData.newPlainText(CLIP_LABEL, action.text))
+        return if (source == TriggerSource.MANUAL) null else BACKGROUND_CLIPBOARD_NOTE
+    }
+
+    /**
+     * 拍照。
+     *
+     * Android 9+ 禁止背景存取相機：手動執行（App 在前景、fgsSwitch 為 null）一律嘗試；
+     * 背景觸發先請前景服務切到 camera 類型，被系統擋下（Android 14+ 背景啟動限制）就記為
+     * 受限失敗並誠實註明——絕不崩潰。未授權相機權限則記失敗並發引導通知。
+     */
+    private suspend fun doTakePhoto(
+        context: Context,
+        action: Action.TakePhoto,
+        fgsSwitch: ForegroundTypeSwitch?
+    ): String {
+        requireCameraPermission(context)
+        requireCaptureForeground(fgsSwitch, CaptureFgsType.CAMERA, "相機")
+        return try {
+            val result = CameraCapture.capture(context, action.lensBack, count = 1, intervalMs = 0L)
+            if (result.uris.isEmpty()) error("擷取失敗")
+            if (action.notify) {
+                notifyCaptureResult(
+                    context = context,
+                    uri = result.uris.lastOrNull(),
+                    mimeType = "image/*",
+                    title = "已拍照",
+                    fileName = result.displayName
+                )
+            }
+            "已存入相簿 相片/Routina"
+        } finally {
+            fgsSwitch?.restore()
+        }
+    }
+
+    /** 連拍：同一次相機綁定內迴圈擷取 count 張、每張間隔 intervalMs（規則同拍照） */
+    private suspend fun doBurstPhoto(
+        context: Context,
+        action: Action.BurstPhoto,
+        fgsSwitch: ForegroundTypeSwitch?
+    ): String {
+        requireCameraPermission(context)
+        requireCaptureForeground(fgsSwitch, CaptureFgsType.CAMERA, "相機")
+        val count = action.count.coerceIn(Action.MIN_BURST_COUNT, Action.MAX_BURST_COUNT)
+        val interval = action.intervalMs
+            .coerceIn(Action.MIN_BURST_INTERVAL_MS, Action.MAX_BURST_INTERVAL_MS)
+        return try {
+            val result = CameraCapture.capture(context, action.lensBack, count, interval.toLong())
+            if (result.uris.isEmpty()) error("擷取失敗")
+            if (action.notify) {
+                notifyCaptureResult(
+                    context = context,
+                    uri = result.uris.lastOrNull(),
+                    mimeType = "image/*",
+                    title = "已連拍 ${result.uris.size} 張",
+                    fileName = result.displayName
+                )
+            }
+            "已存入相簿 ${result.uris.size} 張"
+        } finally {
+            fgsSwitch?.restore()
+        }
+    }
+
+    /**
+     * 錄音。
+     *
+     * 麥克風與相機受相同的前景限制。手動一律嘗試；背景切到 microphone 類型失敗即記受限失敗。
+     * 太短或無音源時 MediaRecorder 內部已吞掉 stop 例外，仍會存出（可能空的）檔案。
+     */
+    private suspend fun doRecordAudio(
+        context: Context,
+        action: Action.RecordAudio,
+        fgsSwitch: ForegroundTypeSwitch?
+    ): String {
+        requireRecordPermission(context)
+        requireCaptureForeground(fgsSwitch, CaptureFgsType.MICROPHONE, "麥克風")
+        val seconds = action.seconds
+            .coerceIn(Action.MIN_RECORD_SECONDS, Action.MAX_RECORD_SECONDS)
+        return try {
+            val result = AudioRecorder.record(context, seconds)
+            if (action.notify) {
+                notifyCaptureResult(
+                    context = context,
+                    uri = result.uri,
+                    mimeType = "audio/*",
+                    title = "已錄音 $seconds 秒",
+                    fileName = result.displayPath.substringAfterLast('/')
+                )
+            }
+            "已存到 ${result.displayPath}"
+        } finally {
+            fgsSwitch?.restore()
+        }
+    }
+
+    /** 播放系統預設音效（通知音／鬧鐘聲／鈴聲）；無額外權限需求 */
+    private fun doPlaySound(context: Context, action: Action.PlaySound): String? {
+        val ringtoneType = when (action.type) {
+            Action.SOUND_ALARM -> RingtoneManager.TYPE_ALARM
+            Action.SOUND_RINGTONE -> RingtoneManager.TYPE_RINGTONE
+            else -> RingtoneManager.TYPE_NOTIFICATION
+        }
+        val uri = RingtoneManager.getActualDefaultRingtoneUri(context, ringtoneType)
+            ?: RingtoneManager.getDefaultUri(ringtoneType)
+            ?: error("找不到系統預設音效")
+        val ringtone = RingtoneManager.getRingtone(context, uri) ?: error("無法播放系統音效")
+        ringtone.play()
+        return null
+    }
+
+    /**
+     * 設定鬧鐘：以系統時鐘 App 建立一個鬧鐘（SKIP_UI 免使用者確認）。
+     * 沿用「開啟 App／網址」的背景 Activity 啟動處理——前景直接送、背景改發可點擊的通知。
+     * 沒有可處理的時鐘 App 時記失敗，不崩潰。
+     */
+    private fun doSetAlarm(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.SetAlarm,
+        canLaunchActivity: Boolean
+    ): String? {
+        val hour = action.hour.coerceIn(0, 23)
+        val minute = action.minute.coerceIn(0, 59)
+        val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+            putExtra(AlarmClock.EXTRA_HOUR, hour)
+            putExtra(AlarmClock.EXTRA_MINUTES, minute)
+            if (action.label.isNotBlank()) putExtra(AlarmClock.EXTRA_MESSAGE, action.label)
+            putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (intent.resolveActivity(context.packageManager) == null) {
+            error("找不到可設定鬧鐘的時鐘 App")
+        }
+        val title = "設定鬧鐘 %02d:%02d".format(hour, minute)
+        return launchOrNotify(context, routine, index, intent, title, canLaunchActivity)
+    }
+
+    /** 相機權限檢查；未授權時發引導通知並中止這個動作 */
+    private fun requireCameraPermission(context: Context) {
+        if (!hasSelfPermission(context, Manifest.permission.CAMERA)) {
+            notifyCameraPermissionNeeded(context)
+            error("未授權相機權限，已發送授權引導通知")
+        }
+    }
+
+    /** 麥克風權限檢查；未授權時發引導通知並中止這個動作 */
+    private fun requireRecordPermission(context: Context) {
+        if (!hasSelfPermission(context, Manifest.permission.RECORD_AUDIO)) {
+            notifyMicrophonePermissionNeeded(context)
+            error("未授權麥克風權限，已發送授權引導通知")
+        }
+    }
+
+    /**
+     * 確認能存取相機／麥克風的前景身分。
+     *
+     * fgsSwitch 為 null＝手動執行、App 在前景，直接放行；非 null＝背景觸發，
+     * 請前景服務切到對應類型，被系統擋下（[ForegroundTypeSwitch.switchTo] 回傳 false）就中止並註明。
+     */
+    private fun requireCaptureForeground(
+        fgsSwitch: ForegroundTypeSwitch?,
+        type: CaptureFgsType,
+        hardware: String
+    ) {
+        if (fgsSwitch == null) return
+        if (!fgsSwitch.switchTo(type)) {
+            error("背景無法啟動$hardware，請改用手動執行或前景觸發")
+        }
+    }
+
+    private fun hasSelfPermission(context: Context, permission: String): Boolean =
+        runCatching {
+            ContextCompat.checkSelfPermission(context, permission) ==
+                PackageManager.PERMISSION_GRANTED
+        }.getOrDefault(false)
+
+    /**
+     * Android 13+ 的降級路徑：開啟且已授權 BLUETOOTH_CONNECT 時帶出系統確認對話框，
+     * 其餘情況（關閉、或未授權）導向藍牙設定頁。
+     */
+    private fun requestBluetoothViaNotification(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.Bluetooth
+    ): String {
+        // ACTION_REQUEST_ENABLE 本身需要 BLUETOOTH_CONNECT，未授權時點了會失敗 → 直接導設定頁
+        val useSystemDialog = action.enable && hasBluetoothConnect(context)
+        val intent = if (useSystemDialog) {
+            Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+        } else {
+            Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+        }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled()) {
+            error("Android 13+ 無法直接切換藍牙，且未授權通知權限")
+        }
+        val id = notificationId(routine.id, index)
+        val pending = PendingIntent.getActivity(
+            context,
+            id,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        ) ?: error("無法建立藍牙用的 PendingIntent")
+
+        val title = if (action.enable) "開啟藍牙" else "關閉藍牙"
+        val notification = NotificationCompat.Builder(context, RoutinaApp.CHANNEL_LAUNCH)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(
+                "來自「${routine.name.ifBlank { "例行程序" }}」，" +
+                    if (useSystemDialog) "點擊確認開啟" else "點擊前往藍牙設定"
+            )
+            .setContentIntent(pending)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        manager.notify(id, notification)
+
+        return if (useSystemDialog) {
+            "Android 13+ 需經系統確認，已發通知，點擊確認開啟"
+        } else {
+            "Android 13+ 無法直接切換，已發通知，點擊前往藍牙設定"
+        }
+    }
+
+    /** Android 12 起切換藍牙需要 BLUETOOTH_CONNECT；之前為安裝時授予的舊權限 */
+    private fun hasBluetoothConnect(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        return runCatching {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ==
+                PackageManager.PERMISSION_GRANTED
+        }.getOrDefault(false)
+    }
+
+    /** 取得通知服務並確認已授權勿擾模式存取權；未授權時發引導通知並中止這個動作 */
+    private fun requireDndAccess(context: Context, purpose: String): NotificationManager {
+        val manager = context.getSystemService(NotificationManager::class.java)
+            ?: error("無法取得通知服務")
+        if (!manager.isNotificationPolicyAccessGranted) {
+            notifyDndPermissionNeeded(context)
+            error("$purpose 需要勿擾模式存取權，已發送授權引導通知")
+        }
+        return manager
+    }
+
+    /** 是否可寫入系統設定（螢幕亮度動作的前提） */
+    fun canWriteSettings(context: Context): Boolean =
+        runCatching { Settings.System.canWrite(context) }.getOrDefault(false)
+
+    // ---------- 權限引導通知 ----------
+
+    private fun notifyBluetoothPermissionNeeded(context: Context) {
+        val settingsIntent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:${context.packageName}")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        notifyPermissionNeeded(
+            context = context,
+            notificationId = NOTIFY_ID_BLUETOOTH,
+            requestCode = REQUEST_BLUETOOTH_SETTINGS,
+            intent = settingsIntent,
+            title = "需要「附近的裝置」權限",
+            text = "點此前往設定，允許 Routina 切換藍牙"
+        )
+    }
+
+    private fun notifyDndPermissionNeeded(context: Context) {
+        val settingsIntent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        notifyPermissionNeeded(
+            context = context,
+            notificationId = NOTIFY_ID_DND,
+            requestCode = REQUEST_DND_SETTINGS,
+            intent = settingsIntent,
+            title = "需要「勿擾模式存取權」",
+            text = "點此前往設定，允許 Routina 切換響鈴與勿擾模式"
+        )
+    }
+
+    private fun notifyOverlayPermissionNeeded(context: Context) {
+        val settingsIntent = directOrGeneric(
+            context,
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION
+        )
+        notifyPermissionNeeded(
+            context = context,
+            notificationId = NOTIFY_ID_OVERLAY,
+            requestCode = REQUEST_OVERLAY_SETTINGS,
+            intent = settingsIntent,
+            title = "需要「顯示在其他應用程式上層」",
+            text = "點此前往設定，讓背景觸發能直接開啟 App 或網址；若無法開啟請先允許受限制的設定"
+        )
+    }
+
+    private fun notifyWriteSettingsNeeded(context: Context) {
+        val settingsIntent = directOrGeneric(context, Settings.ACTION_MANAGE_WRITE_SETTINGS)
+        notifyPermissionNeeded(
+            context = context,
+            notificationId = NOTIFY_ID_WRITE_SETTINGS,
+            requestCode = REQUEST_WRITE_SETTINGS,
+            intent = settingsIntent,
+            title = "需要「修改系統設定」權限",
+            text = "點此前往設定，允許 Routina 調整螢幕亮度"
+        )
+    }
+
+    private fun notifyCameraPermissionNeeded(context: Context) {
+        val settingsIntent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:${context.packageName}")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        notifyPermissionNeeded(
+            context = context,
+            notificationId = NOTIFY_ID_CAMERA,
+            requestCode = REQUEST_CAMERA_SETTINGS,
+            intent = settingsIntent,
+            title = "需要「相機」權限",
+            text = "點此前往設定，允許 Routina 拍照"
+        )
+    }
+
+    private fun notifyMicrophonePermissionNeeded(context: Context) {
+        val settingsIntent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:${context.packageName}")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        notifyPermissionNeeded(
+            context = context,
+            notificationId = NOTIFY_ID_MICROPHONE,
+            requestCode = REQUEST_MICROPHONE_SETTINGS,
+            intent = settingsIntent,
+            title = "需要「麥克風」權限",
+            text = "點此前往設定，允許 Routina 錄音"
+        )
+    }
+
+    /**
+     * 帶 package URI 可直達本 App 的開關頁（部分機型的通用清單頁很難找到自己的 App）；
+     * 該頁不存在時退回通用清單頁，避免通知點了沒反應。
+     */
+    private fun directOrGeneric(context: Context, action: String): Intent {
+        val direct = Intent(action, Uri.parse("package:${context.packageName}"))
+        val resolvable = runCatching {
+            direct.resolveActivity(context.packageManager) != null
+        }.getOrDefault(false)
+        return (if (resolvable) direct else Intent(action))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+
+    private fun notifyPermissionNeeded(
+        context: Context,
+        notificationId: Int,
+        requestCode: Int,
+        intent: Intent,
+        title: String,
+        text: String
+    ) {
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled()) return
+        val pending = PendingIntent.getActivity(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        ) ?: return
+        val notification = NotificationCompat.Builder(context, RoutinaApp.CHANNEL_ALERTS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setContentIntent(pending)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        manager.notify(notificationId, notification)
+    }
+
+    // ---------- 擷取結果通知 ----------
+
+    /**
+     * 擷取成功後發一則可點擊開啟的結果通知。
+     *
+     * 點擊以系統檢視器（相片檢視器 / 音訊播放器）開啟 [uri]：ACTION_VIEW + content URI +
+     * FLAG_GRANT_READ_URI_PERMISSION 讓外部 App 讀得到、PendingIntent 帶 FLAG_IMMUTABLE。
+     * 通知 ID 以流水號遞增，連拍 / 多次擷取的通知不會互相覆蓋。
+     * 未授權通知（Android 13+）時靜默略過——擷取動作本身仍記為成功（檔案已存）。
+     */
+    private fun notifyCaptureResult(
+        context: Context,
+        uri: Uri?,
+        mimeType: String,
+        title: String,
+        fileName: String
+    ) {
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled()) return
+
+        val id = CAPTURE_NOTIFY_SEQ.getAndIncrement()
+        val builder = NotificationCompat.Builder(context, RoutinaApp.CHANNEL_CAPTURE)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(fileName)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+
+        if (uri != null && uri != Uri.EMPTY) {
+            val viewIntent = Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, mimeType)
+                .addFlags(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+            val pending = PendingIntent.getActivity(
+                context,
+                id,
+                viewIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (pending != null) builder.setContentIntent(pending)
+        }
+        manager.notify(id, builder.build())
+    }
+
+    // ---------- 共用工具 ----------
+
+    /** 是否具備「顯示在其他應用程式上層」權限（背景啟動 Activity 的前提） */
+    fun canDrawOverlays(context: Context): Boolean =
+        runCatching { Settings.canDrawOverlays(context) }.getOrDefault(false)
+
+    /** 已帶 scheme（http:、mailto:、myapp: …）就原樣使用，否則補上 https:// */
+    private fun normalizeUrl(raw: String): String {
+        val trimmed = raw.trim()
+        require(trimmed.isNotBlank()) { "網址是空的" }
+        return if (URL_SCHEME.containsMatchIn(trimmed)) trimmed else "https://$trimmed"
+    }
+
+    private fun audioStream(stream: VolumeStream): Int = when (stream) {
+        VolumeStream.MEDIA -> AudioManager.STREAM_MUSIC
+        VolumeStream.RING -> AudioManager.STREAM_RING
+        VolumeStream.ALARM -> AudioManager.STREAM_ALARM
+        VolumeStream.NOTIFICATION -> AudioManager.STREAM_NOTIFICATION
+    }
+
+    /**
+     * 由 routine id + 動作序號推導通知 ID：同一動作重複觸發會更新同一則通知，
+     * 不同動作彼此不覆蓋，且必定落在 [1000, 8999] 內、避開固定 ID。
+     */
+    private fun notificationId(routineId: String, actionIndex: Int): Int {
+        val raw = (routineId.hashCode() * 31 + actionIndex) and 0x7FFFFFFF
+        return NOTIFY_ID_MIN + raw % NOTIFY_ID_RANGE
+    }
+
+    // ---------- 顯示文字 ----------
+
+    fun describe(context: Context, action: Action): String = when (action) {
+        is Action.Notify -> "顯示通知：${action.title.ifBlank { "(無標題)" }}"
+        is Action.OpenApp -> "開啟 App：${action.appLabel.ifBlank { action.packageName }}"
+        is Action.OpenUrl -> "開啟網址：${redactUrl(action.url, stripQuery = false)}"
+        is Action.Share -> "分享：${redactText(action.text)}"
+        is Action.MediaVolume -> "${volumeStreamLabel(action.stream)}音量：${action.percent}%"
+        is Action.RingerMode -> "響鈴模式：${ringerLabel(action.mode)}"
+        is Action.Bluetooth -> "藍牙：${if (action.enable) "開啟" else "關閉"}"
+        is Action.Flashlight -> "手電筒：${if (action.on) "開啟" else "關閉"}"
+        is Action.Speak -> "朗讀文字：${redactText(action.text)}"
+        is Action.Vibrate -> "震動：${action.millis} 毫秒"
+        is Action.Dnd -> "勿擾模式：${if (action.on) "開啟" else "關閉"}"
+        is Action.Brightness -> "螢幕亮度：${action.percent}%"
+        is Action.Http -> "HTTP ${action.method}：${redactUrl(action.url, stripQuery = true)}"
+        is Action.MediaKey -> "播放控制：${mediaKeyLabel(action.key)}"
+        is Action.Wait -> "等待 ${action.seconds} 秒"
+        is Action.Clipboard -> "複製到剪貼簿：${redactText(action.text)}"
+        is Action.TakePhoto -> "拍照：${lensLabel(action.lensBack)}"
+        is Action.BurstPhoto ->
+            "連拍：${lensLabel(action.lensBack)}、${action.count} 張、間隔 ${action.intervalMs}ms"
+
+        is Action.RecordAudio -> "錄音：${action.seconds} 秒"
+        is Action.PlaySound -> "播放音效：${soundTypeLabel(action.type)}"
+        is Action.SetAlarm -> {
+            val time = "%02d:%02d".format(action.hour, action.minute)
+            if (action.label.isBlank()) "設定鬧鐘：$time" else "設定鬧鐘：$time（${action.label}）"
+        }
+    }
+
+    /**
+     * RunLog 顯示用：截斷過長文字，避免剪貼簿／分享／朗讀的整段內容明文落地到 logs.json。
+     * 截到約 [max] 字後補「…」；空白與前後空格先修剪。
+     */
+    private fun redactText(text: String, max: Int = 20): String {
+        val trimmed = text.trim()
+        return if (trimmed.length <= max) trimmed else trimmed.take(max) + "…"
+    }
+
+    /**
+     * RunLog 顯示用的網址遮罩。
+     *
+     * [stripQuery] 為 true（HTTP 動作）時去掉 `?` 之後的 query 與 `#` 之後的 fragment——
+     * webhook 的 token 幾乎都藏在 query，去掉後只留 scheme://host/path，仍足以辨識目標。
+     * 「開啟網址」動作傳 false（保留網址本身，那本就是要開啟的目標），僅截斷過長者。
+     */
+    private fun redactUrl(rawUrl: String, stripQuery: Boolean, max: Int = 80): String {
+        val trimmed = rawUrl.trim()
+        val base = if (stripQuery) {
+            trimmed.substringBefore('?').substringBefore('#')
+        } else {
+            trimmed
+        }
+        return if (base.length <= max) base else base.take(max) + "…"
+    }
+
+    fun ringerLabel(mode: RingerModeType): String = when (mode) {
+        RingerModeType.NORMAL -> "正常"
+        RingerModeType.VIBRATE -> "震動"
+        RingerModeType.SILENT -> "靜音"
+    }
+
+    fun lensLabel(lensBack: Boolean): String = if (lensBack) "後鏡頭" else "前鏡頭"
+
+    fun soundTypeLabel(type: String): String = when (type) {
+        Action.SOUND_ALARM -> "鬧鐘聲"
+        Action.SOUND_RINGTONE -> "鈴聲"
+        else -> "通知音"
+    }
+
+    fun volumeStreamLabel(stream: VolumeStream): String = when (stream) {
+        VolumeStream.MEDIA -> "媒體"
+        VolumeStream.RING -> "鈴聲"
+        VolumeStream.ALARM -> "鬧鐘"
+        VolumeStream.NOTIFICATION -> "通知"
+    }
+
+    fun mediaKeyLabel(key: String): String = when (key) {
+        Action.KEY_NEXT -> "下一首"
+        Action.KEY_PREVIOUS -> "上一首"
+        else -> "播放／暫停"
+    }
+
+    /** 是否已帶 URI scheme（RFC 3986：字母開頭，後接字母/數字/+/-/.） */
+    private val URL_SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:")
+
+    /** Android 的 SCREEN_BRIGHTNESS 值域 */
+    private const val MAX_BRIGHTNESS = 255
+
+    private const val HTTP_TIMEOUT_MS = 10_000
+
+    /** 剪貼簿項目的標籤（部分系統 UI 會顯示來源名稱） */
+    private const val CLIP_LABEL = "Routina"
+
+    /** 背景剪貼簿寫入的誠實註記 */
+    private const val BACKGROUND_CLIPBOARD_NOTE = "背景寫入在部分裝置可能被系統忽略"
+
+    private const val NOTIFY_ID_MIN = 1000
+    private const val NOTIFY_ID_RANGE = 8000
+
+    /**
+     * 擷取結果通知的流水號 ID（起點避開 [NOTIFY_ID_MIN, NOTIFY_ID_MIN+RANGE) 與固定 ID 9001+）。
+     * 遞增發放讓連拍 / 多次擷取的通知彼此不覆蓋。
+     */
+    private val CAPTURE_NOTIFY_SEQ = AtomicInteger(20000)
+    private const val NOTIFY_ID_DND = 9001
+    private const val NOTIFY_ID_OVERLAY = 9002
+    private const val NOTIFY_ID_BLUETOOTH = 9003
+    private const val NOTIFY_ID_WRITE_SETTINGS = 9004
+    private const val NOTIFY_ID_CAMERA = 9005
+    private const val NOTIFY_ID_MICROPHONE = 9006
+    private const val REQUEST_DND_SETTINGS = 501
+    private const val REQUEST_OVERLAY_SETTINGS = 502
+    private const val REQUEST_BLUETOOTH_SETTINGS = 503
+    private const val REQUEST_WRITE_SETTINGS = 504
+    private const val REQUEST_CAMERA_SETTINGS = 505
+    private const val REQUEST_MICROPHONE_SETTINGS = 506
+}

@@ -1,0 +1,37 @@
+# Gradle
+.gradle/
+build/
+app/build/
+.kotlin/
+
+# Local config
+local.properties
+
+# Signing / secrets
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+keystore.properties
+google-services.json
+.env
+.env.*
+
+# Logs
+*.log
+
+# IDE
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.hprof

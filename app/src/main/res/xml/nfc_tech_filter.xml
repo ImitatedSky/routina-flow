@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ACTION_TECH_DISCOVERED 的技術清單。
+  每個 <tech-list> 是一組 AND 條件，多組之間是 OR：這裡分成四組單一技術，
+  等於「NfcA / NfcB / NfcF / NfcV 任一種都接收」，涵蓋市面上的一般標籤
+  （我們只讀硬體 UID，不需要更上層的協定支援）。
+-->
+<resources xmlns:android="http://schemas.android.com/apk/res/android">
+    <tech-list>
+        <tech>android.nfc.tech.NfcA</tech>
+    </tech-list>
+    <tech-list>
+        <tech>android.nfc.tech.NfcB</tech>
+    </tech-list>
+    <tech-list>
+        <tech>android.nfc.tech.NfcF</tech>
+    </tech-list>
+    <tech-list>
+        <tech>android.nfc.tech.NfcV</tech>
+    </tech-list>
+</resources>
