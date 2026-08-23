@@ -8,6 +8,9 @@
 不像 Tasker、MacroDroid 那樣把功能全攤開，Routina 只做一件事：
 **讓你三十秒內建立一個一眼看得懂的例行程序。**
 
+[![Build](https://github.com/ImitatedSky/routina/actions/workflows/build-apk.yml/badge.svg)](https://github.com/ImitatedSky/routina/actions/workflows/build-apk.yml)
+[![Release](https://img.shields.io/github/v/release/ImitatedSky/routina?display_name=tag&label=release)](https://github.com/ImitatedSky/routina/releases/latest)
+
 ![Platform](https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android&logoColor=white)
 ![minSdk](https://img.shields.io/badge/minSdk-26-1e88e5)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.0-7f52ff?logo=kotlin&logoColor=white)
@@ -377,7 +380,12 @@ NFC 標籤對話框下方的「**寫入標籤**」可以把一段 Routina 專屬
 
 ## 下載與安裝
 
-### 從 GitHub Actions 下載
+### 從 Releases 下載（推薦）
+
+到 [**Releases 頁面**](https://github.com/ImitatedSky/routina/releases/latest) 下載最新版的 `app-release.apk`。
+每當推送版本標籤（`v*`，例如 `v0.12.0`）時，CI 會自動建置並發佈到 Releases。
+
+### 從 GitHub Actions 下載（每次 commit 的最新建置）
 
 1. 開啟本專案的 **Actions** 分頁
 2. 點進最新一次成功的 **Build APK** 執行紀錄
