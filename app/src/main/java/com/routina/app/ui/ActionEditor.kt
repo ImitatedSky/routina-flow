@@ -37,7 +37,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,7 +72,6 @@ import com.routina.app.model.Trigger
 import com.routina.app.model.VolumeStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.math.roundToInt
 
 /**
  * 編輯單一動作的參數。confirm 時回傳更新後的 Action。
@@ -187,14 +185,14 @@ fun ActionEditDialog(
                         onSelect = { draft = current.copy(stream = it) }
                     )
                     Spacer(Modifier.height(12.dp))
-                    Text("音量：${current.percent}%", style = MaterialTheme.typography.bodyLarge)
-                    Slider(
-                        value = current.percent.toFloat(),
-                        onValueChange = {
-                            draft = current.copy(percent = it.roundToInt().coerceIn(0, 100))
-                        },
-                        valueRange = 0f..100f,
-                        steps = 19
+                    NumericVarField(
+                        label = "音量（%）",
+                        expr = current.percentExpr,
+                        fallback = current.percent,
+                        unit = "%",
+                        range = Action.PERCENT_SAFE,
+                        tokenGroups = tokenGroups,
+                        onExprChange = { draft = current.copy(percentExpr = it) }
                     )
                     if (current.stream == VolumeStream.RING ||
                         current.stream == VolumeStream.NOTIFICATION
@@ -254,20 +252,15 @@ fun ActionEditDialog(
                     )
                 }
 
-                is Action.Vibrate -> Column {
-                    Text(
-                        "震動 ${current.millis} 毫秒",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Slider(
-                        value = current.millis.toFloat(),
-                        onValueChange = {
-                            draft = current.copy(millis = roundTo(it, 100, 100, 3000))
-                        },
-                        valueRange = Action.MIN_VIBRATE_MS.toFloat()..Action.MAX_VIBRATE_MS.toFloat(),
-                        steps = 28
-                    )
-                }
+                is Action.Vibrate -> NumericVarField(
+                    label = "震動時間（毫秒）",
+                    expr = current.millisExpr,
+                    fallback = current.millis,
+                    unit = " 毫秒",
+                    range = Action.VIBRATE_MS_SAFE,
+                    tokenGroups = tokenGroups,
+                    onExprChange = { draft = current.copy(millisExpr = it) }
+                )
 
                 is Action.Dnd -> Column {
                     OnOffChips(current.on) { draft = current.copy(on = it) }
@@ -289,15 +282,16 @@ fun ActionEditDialog(
                 }
 
                 is Action.Brightness -> Column {
-                    Text("亮度：${current.percent}%", style = MaterialTheme.typography.bodyLarge)
-                    Slider(
-                        value = current.percent.toFloat(),
-                        onValueChange = {
-                            draft = current.copy(percent = it.roundToInt().coerceIn(0, 100))
-                        },
-                        valueRange = 0f..100f,
-                        steps = 19
+                    NumericVarField(
+                        label = "亮度（%）",
+                        expr = current.percentExpr,
+                        fallback = current.percent,
+                        unit = "%",
+                        range = Action.PERCENT_SAFE,
+                        tokenGroups = tokenGroups,
+                        onExprChange = { draft = current.copy(percentExpr = it) }
                     )
+                    Spacer(Modifier.height(8.dp))
                     Text(
                         "只設定亮度值，不會關閉自動亮度——開著自動亮度時系統會在下次環境光變化後接手。",
                         style = MaterialTheme.typography.bodySmall,
@@ -354,16 +348,16 @@ fun ActionEditDialog(
                 )
 
                 is Action.Wait -> Column {
-                    Text("等待 ${current.seconds} 秒", style = MaterialTheme.typography.bodyLarge)
-                    Slider(
-                        value = current.seconds.toFloat(),
-                        onValueChange = {
-                            draft = current.copy(seconds = it.roundToInt().coerceIn(1, 30))
-                        },
-                        valueRange = Action.MIN_WAIT_SECONDS.toFloat()..
-                            Action.MAX_WAIT_SECONDS.toFloat(),
-                        steps = 28
+                    NumericVarField(
+                        label = "等待秒數",
+                        expr = current.secondsExpr,
+                        fallback = current.seconds,
+                        unit = " 秒",
+                        range = Action.WAIT_SECONDS_SAFE,
+                        tokenGroups = tokenGroups,
+                        onExprChange = { draft = current.copy(secondsExpr = it) }
                     )
+                    Spacer(Modifier.height(8.dp))
                     Text(
                         "等待在前景執行服務中進行。極端情況下服務起不來時會跳過等待並在紀錄註明。",
                         style = MaterialTheme.typography.bodySmall,
@@ -406,37 +400,24 @@ fun ActionEditDialog(
                     Spacer(Modifier.height(4.dp))
                     LensChips(current.lensBack) { draft = current.copy(lensBack = it) }
                     Spacer(Modifier.height(12.dp))
-                    Text("張數：${current.count} 張", style = MaterialTheme.typography.bodyLarge)
-                    Slider(
-                        value = current.count.toFloat(),
-                        onValueChange = {
-                            draft = current.copy(
-                                count = it.roundToInt()
-                                    .coerceIn(Action.MIN_BURST_COUNT, Action.MAX_BURST_COUNT)
-                            )
-                        },
-                        valueRange = Action.MIN_BURST_COUNT.toFloat()..
-                            Action.MAX_BURST_COUNT.toFloat(),
-                        steps = Action.MAX_BURST_COUNT - Action.MIN_BURST_COUNT - 1
+                    NumericVarField(
+                        label = "張數",
+                        expr = current.countExpr,
+                        fallback = current.count,
+                        unit = " 張",
+                        range = Action.BURST_COUNT_SAFE,
+                        tokenGroups = tokenGroups,
+                        onExprChange = { draft = current.copy(countExpr = it) }
                     )
-                    Text(
-                        "間隔：${current.intervalMs} ms",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Slider(
-                        value = current.intervalMs.toFloat(),
-                        onValueChange = {
-                            draft = current.copy(
-                                intervalMs = roundTo(
-                                    it, 100,
-                                    Action.MIN_BURST_INTERVAL_MS, Action.MAX_BURST_INTERVAL_MS
-                                )
-                            )
-                        },
-                        valueRange = Action.MIN_BURST_INTERVAL_MS.toFloat()..
-                            Action.MAX_BURST_INTERVAL_MS.toFloat(),
-                        steps = (Action.MAX_BURST_INTERVAL_MS - Action.MIN_BURST_INTERVAL_MS)
-                            / 100 - 1
+                    Spacer(Modifier.height(12.dp))
+                    NumericVarField(
+                        label = "間隔（毫秒）",
+                        expr = current.intervalExpr,
+                        fallback = current.intervalMs,
+                        unit = " ms",
+                        range = Action.BURST_INTERVAL_SAFE,
+                        tokenGroups = tokenGroups,
+                        onExprChange = { draft = current.copy(intervalExpr = it) }
                     )
                     NotifyResultSwitch(current.notify) { draft = current.copy(notify = it) }
                     CaptureStorageNotice()
@@ -445,19 +426,16 @@ fun ActionEditDialog(
                 }
 
                 is Action.RecordAudio -> Column {
-                    Text("錄音 ${current.seconds} 秒", style = MaterialTheme.typography.bodyLarge)
-                    Slider(
-                        value = current.seconds.toFloat(),
-                        onValueChange = {
-                            draft = current.copy(
-                                seconds = it.roundToInt()
-                                    .coerceIn(Action.MIN_RECORD_SECONDS, Action.MAX_RECORD_SECONDS)
-                            )
-                        },
-                        valueRange = Action.MIN_RECORD_SECONDS.toFloat()..
-                            Action.MAX_RECORD_SECONDS.toFloat(),
-                        steps = 0
+                    NumericVarField(
+                        label = "錄音秒數",
+                        expr = current.secondsExpr,
+                        fallback = current.seconds,
+                        unit = " 秒",
+                        range = Action.RECORD_SECONDS_SAFE,
+                        tokenGroups = tokenGroups,
+                        onExprChange = { draft = current.copy(secondsExpr = it) }
                     )
+                    Spacer(Modifier.height(8.dp))
                     Text(
                         "存入音樂資料夾（音樂/Routina）；執行紀錄會附上存檔位置。" +
                             "在 Android 10 以上為公開音樂目錄，裝置上的其他 App 也看得到。",
@@ -695,6 +673,53 @@ fun VariableTextField(
         }
     }
 }
+
+/**
+ * 數值參數欄：可直接鍵入任意整數，或插入解析後為數字的變數 token。
+ *
+ * 內容寫入對應的 Expr 字串（[onExprChange]）；留空＝沿用原本的 [fallback]（舊資料 / 舊行為）。
+ * 執行時由 RoutineExecutor.resolveNum 代入變數、parse 並夾在 [range] 內，超出上限會被夾到範圍。
+ */
+@Composable
+private fun NumericVarField(
+    label: String,
+    expr: String,
+    fallback: Int,
+    unit: String,
+    range: IntRange,
+    tokenGroups: List<VarTokenGroup>,
+    onExprChange: (String) -> Unit
+) {
+    val typed = expr.trim().toIntOrNull()
+    val supporting = when {
+        typed != null && typed > range.last -> "超過上限，執行時會夾到 ${range.last}$unit"
+        typed != null && typed < range.first -> "低於下限，執行時會夾到 ${range.first}$unit"
+        else -> "留空＝沿用 $fallback$unit，可直接輸入數字或插入變數"
+    }
+    VariableTextField(
+        value = expr,
+        onValueChange = onExprChange,
+        label = label,
+        tokenGroups = numericTokenGroups(tokenGroups),
+        placeholder = fallback.toString(),
+        singleLine = true,
+        keyboardType = KeyboardType.Number,
+        supportingText = supporting
+    )
+}
+
+/**
+ * 數值欄的「插入變數」清單：只留可能解析成數字的 token
+ * （上一個結果、使用者設定的變數、常用裡的電量），略過時間/日期等純文字 token。
+ */
+private fun numericTokenGroups(groups: List<VarTokenGroup>): List<VarTokenGroup> =
+    groups.mapNotNull { group ->
+        when (group.title) {
+            "上一個結果", "已設定的變數" -> group
+            "常用" -> group.copy(tokens = group.tokens.filter { it.token == "{{電量}}" })
+            else -> null
+        }
+    }.filter { it.tokens.isNotEmpty() }
 
 /** 把 [token] 插入目前游標處（或取代選取範圍），並把游標移到插入內容之後 */
 private fun insertToken(field: TextFieldValue, token: String): TextFieldValue {
@@ -946,10 +971,6 @@ private fun <T> ChipRow(
         }
     }
 }
-
-/** 滑桿值對齊到 [step] 的倍數並限制在範圍內 */
-private fun roundTo(value: Float, step: Int, min: Int, max: Int): Int =
-    ((value / step).roundToInt() * step).coerceIn(min, max)
 
 private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.Notify -> action.title.isNotBlank() || action.message.isNotBlank()

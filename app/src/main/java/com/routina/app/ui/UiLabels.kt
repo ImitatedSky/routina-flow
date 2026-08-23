@@ -166,22 +166,22 @@ fun actionParamText(action: Action): String = when (action) {
     is Action.OpenUrl -> truncate(action.url.ifBlank { "未設定" }, 20)
     // 多行分享文字在單行參數欄裡先攤平再截斷（沿用剪貼簿的處理）
     is Action.Share -> truncate(action.text.flattenLines().ifBlank { "未設定" }, 15)
-    is Action.MediaVolume -> "${action.percent}%"
+    is Action.MediaVolume -> numParam(action.percentExpr, "${action.percent}%")
     is Action.RingerMode -> ringerModeName(action.mode)
     is Action.Bluetooth -> if (action.enable) "開啟" else "關閉"
     is Action.Flashlight -> if (action.on) "開啟" else "關閉"
     is Action.Speak -> truncate(action.text.ifBlank { "未設定" }, 20)
-    is Action.Vibrate -> "${action.millis} 毫秒"
+    is Action.Vibrate -> numParam(action.millisExpr, "${action.millis} 毫秒")
     is Action.Dnd -> if (action.on) "開啟" else "關閉"
-    is Action.Brightness -> "${action.percent}%"
+    is Action.Brightness -> numParam(action.percentExpr, "${action.percent}%")
     is Action.Http -> truncate(action.url.ifBlank { "未設定" }, 20)
     is Action.MediaKey -> mediaKeyName(action.key)
-    is Action.Wait -> "${action.seconds} 秒"
+    is Action.Wait -> numParam(action.secondsExpr, "${action.seconds} 秒")
     // 多行文字在單行參數欄裡只看得到第一行，先把換行攤平再截斷
     is Action.Clipboard -> truncate(action.text.flattenLines().ifBlank { "未設定" }, 15)
     is Action.TakePhoto -> lensName(action.lensBack)
-    is Action.BurstPhoto -> "${action.count} 張"
-    is Action.RecordAudio -> "${action.seconds} 秒"
+    is Action.BurstPhoto -> numParam(action.countExpr, "${action.count} 張")
+    is Action.RecordAudio -> numParam(action.secondsExpr, "${action.seconds} 秒")
     is Action.PlaySound -> soundTypeName(action.type)
     is Action.SetAlarm -> timeLabel(action.hour, action.minute)
     // 積木參數欄顯示原始 template（含 token 文字），不做即時求值
@@ -192,6 +192,10 @@ fun actionParamText(action: Action): String = when (action) {
         if (value.isBlank()) name else truncate("$name = $value", 20)
     }
 }
+
+/** 數值參數欄：Expr 非空顯示 Expr（數字或截斷後的 `{{...}}`），否則顯示原本的整數文字 */
+private fun numParam(expr: String, intText: String): String =
+    if (expr.isBlank()) intText else truncate(expr.trim(), 16)
 
 /** 把多行文字攤成一行（換行改為空格），供單行參數欄顯示 */
 private fun String.flattenLines(): String =
