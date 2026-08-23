@@ -19,63 +19,65 @@ import com.routina.app.model.Trigger
  */
 object RoutinaColors {
 
+    // 家族色相不變，但整體降飽和約 32%，畫面較柔和不刺眼；組內色階差保留。
+
     // ---------- 觸發：手動（中性灰藍） ----------
     /** 手動執行：無自動觸發，以中性色與其餘觸發家族區隔 */
-    val TriggerManual = Color(0xFF4E5560)
+    val TriggerManual = Color(0xFF51565D)
 
     // ---------- 觸發：時間（靛） ----------
-    val TriggerTime = Color(0xFF3949AB)
+    val TriggerTime = Color(0xFF4B5699)
 
     // ---------- 觸發：電源（綠） ----------
-    val TriggerPowerConnected = Color(0xFF1B5E20)
-    val TriggerPowerDisconnected = Color(0xFF2E7D32)
-    val TriggerBatteryBelow = Color(0xFF388E3C)
-    val TriggerBatteryAbove = Color(0xFF43A047)
-    val TriggerPowerSave = Color(0xFF66BB6A)
+    val TriggerPowerConnected = Color(0xFF265329)
+    val TriggerPowerDisconnected = Color(0xFF3B703D)
+    val TriggerBatteryBelow = Color(0xFF468048)
+    val TriggerBatteryAbove = Color(0xFF529155)
+    val TriggerPowerSave = Color(0xFF74AD76)
 
     // ---------- 觸發：連線（青） ----------
-    val TriggerWifiConnected = Color(0xFF006064)
-    val TriggerWifiDisconnected = Color(0xFF00838F)
-    val TriggerBtConnected = Color(0xFF0097A7)
-    val TriggerBtDisconnected = Color(0xFF00ACC1)
-    val TriggerAirplaneMode = Color(0xFF26C6DA)
-    val TriggerNfcTag = Color(0xFF4DD0E1)
+    val TriggerWifiConnected = Color(0xFF105154)
+    val TriggerWifiDisconnected = Color(0xFF177078)
+    val TriggerBtConnected = Color(0xFF1B818C)
+    val TriggerBtDisconnected = Color(0xFF1F94A2)
+    val TriggerAirplaneMode = Color(0xFF43B0BD)
+    val TriggerNfcTag = Color(0xFF65BEC9)
 
     // ---------- 觸發：系統與應用（藍灰） ----------
-    val TriggerDndChanged = Color(0xFF37474F)
-    val TriggerNotificationPosted = Color(0xFF455A64)
-    val TriggerAppState = Color(0xFF546E7A)
+    val TriggerDndChanged = Color(0xFF3B464B)
+    val TriggerNotificationPosted = Color(0xFF4A585F)
+    val TriggerAppState = Color(0xFF5A6C74)
 
     // ---------- 觸發：位置（紫） ----------
-    val TriggerLocationEnter = Color(0xFF4527A0)
-    val TriggerLocationExit = Color(0xFF5E35B1)
+    val TriggerLocationEnter = Color(0xFF4F3A8D)
+    val TriggerLocationExit = Color(0xFF65499D)
 
     // ---------- 動作：通知與 App（藍） ----------
-    val ActionNotify = Color(0xFF0D47A1)
-    val ActionOpenApp = Color(0xFF1565C0)
-    val ActionOpenUrl = Color(0xFF1976D2)
-    val ActionHttp = Color(0xFF1E88E5)
-    val ActionSetAlarm = Color(0xFF42A5F5)
-    val ActionShare = Color(0xFF64B5F6)
+    val ActionNotify = Color(0xFF254C89)
+    val ActionOpenApp = Color(0xFF3067A5)
+    val ActionOpenUrl = Color(0xFF3776B4)
+    val ActionHttp = Color(0xFF3E86C5)
+    val ActionSetAlarm = Color(0xFF5FA2D8)
+    val ActionShare = Color(0xFF7BB2DF)
 
     // ---------- 動作：聲音（紅） ----------
-    val ActionVolume = Color(0xFFB71C1C)
-    val ActionRinger = Color(0xFFC62828)
-    val ActionSpeak = Color(0xFFD32F2F)
-    val ActionMediaKey = Color(0xFFE53935)
-    val ActionPlaySound = Color(0xFFEF5350)
+    val ActionVolume = Color(0xFF9E3535)
+    val ActionRinger = Color(0xFFAD4141)
+    val ActionSpeak = Color(0xFFB94949)
+    val ActionMediaKey = Color(0xFFC95451)
+    val ActionPlaySound = Color(0xFFD66B69)
 
     // ---------- 動作：裝置（橘） ----------
-    val ActionFlashlight = Color(0xFFE65100)
-    val ActionVibrate = Color(0xFFEF6C00)
-    val ActionBrightness = Color(0xFFF57C00)
-    val ActionDnd = Color(0xFFFB8C00)
-    val ActionBluetooth = Color(0xFFFFA000)
+    val ActionFlashlight = Color(0xFFC15C25)
+    val ActionVibrate = Color(0xFFC97026)
+    val ActionBrightness = Color(0xFFCE7C27)
+    val ActionDnd = Color(0xFFD38728)
+    val ActionBluetooth = Color(0xFFD69629)
 
     // ---------- 動作：媒體與擷取（紫） ----------
-    val ActionTakePhoto = Color(0xFF6A1B9A)
-    val ActionBurstPhoto = Color(0xFF8E24AA)
-    val ActionRecordAudio = Color(0xFFAB47BC)
+    val ActionTakePhoto = Color(0xFF652F86)
+    val ActionBurstPhoto = Color(0xFF823995)
+    val ActionRecordAudio = Color(0xFF9E5AA9)
 
     // ---------- 動作：流程（灰） ----------
     val ActionWait = Color(0xFF616161)
