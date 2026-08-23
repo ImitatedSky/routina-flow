@@ -9,19 +9,25 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -146,11 +152,14 @@ fun TriggerPaletteSheet(
     nfcAvailable: Boolean = true
 ) {
     var hint by remember { mutableStateOf<String?>(null) }
+    var query by rememberSaveable { mutableStateOf("") }
 
     PaletteSheet(title = "選擇觸發條件", onDismiss = onDismiss) {
-        TRIGGER_GROUPS.forEach { group ->
+        PaletteSearchField(query, { query = it })
+        val shown = filterGroups(TRIGGER_GROUPS, query) { triggerTypeName(it) }
+        shown.forEach { (group, items) ->
             GroupHeader(group.title)
-            group.items.forEach { template ->
+            items.forEach { template ->
                 val selected = current::class == template::class
                 val unavailableHint = when {
                     !locationAvailable && template.isLocation -> NO_GMS_HINT
@@ -177,6 +186,7 @@ fun TriggerPaletteSheet(
                 )
             }
         }
+        if (shown.isEmpty()) NoPaletteResults()
         hint?.let {
             Text(
                 text = it,
@@ -193,10 +203,14 @@ fun ActionPaletteSheet(
     onPick: (Action) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var query by rememberSaveable { mutableStateOf("") }
+
     PaletteSheet(title = "加入動作", onDismiss = onDismiss) {
-        ACTION_GROUPS.forEach { group ->
+        PaletteSearchField(query, { query = it })
+        val shown = filterGroups(ACTION_GROUPS, query) { actionTypeName(it) }
+        shown.forEach { (group, items) ->
             GroupHeader(group.title)
-            group.items.forEach { template ->
+            items.forEach { template ->
                 PaletteBlock(
                     fill = actionColor(template),
                     text = actionTypeName(template),
@@ -205,6 +219,7 @@ fun ActionPaletteSheet(
                 )
             }
         }
+        if (shown.isEmpty()) NoPaletteResults()
     }
 }
 
@@ -216,6 +231,58 @@ private fun GroupHeader(title: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(top = 6.dp)
+    )
+}
+
+/**
+ * 依查詢過濾各分組：保留顯示名稱含查詢字串（不分大小寫）的積木；整組無符合就丟掉，
+ * 讓那組小標一併隱藏。空查詢原樣回傳全部分組。
+ */
+private fun <T> filterGroups(
+    groups: List<PaletteGroup<T>>,
+    query: String,
+    name: (T) -> String
+): List<Pair<PaletteGroup<T>, List<T>>> {
+    val q = query.trim()
+    return groups.mapNotNull { group ->
+        val items = if (q.isEmpty()) {
+            group.items
+        } else {
+            group.items.filter { name(it).contains(q, ignoreCase = true) }
+        }
+        if (items.isEmpty()) null else group to items
+    }
+}
+
+/** 調色盤頂部搜尋欄：依積木名稱即時過濾，非空時右側顯示清除鈕 */
+@Composable
+private fun PaletteSearchField(query: String, onQueryChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = { Text("搜尋") },
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Filled.Clear, contentDescription = "清除搜尋")
+                }
+            }
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp)
+    )
+}
+
+/** 調色盤搜尋全無符合時的提示 */
+@Composable
+private fun NoPaletteResults() {
+    Text(
+        text = "找不到符合的項目",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(vertical = 8.dp)
     )
 }
 
