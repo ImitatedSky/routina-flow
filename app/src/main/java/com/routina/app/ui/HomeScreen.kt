@@ -22,8 +22,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -64,7 +66,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -84,6 +88,8 @@ import com.routina.app.model.isLocation
 import com.routina.app.ui.blocks.RoutinePreviewStack
 import com.routina.app.ui.theme.triggerColor
 import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,6 +105,8 @@ fun HomeScreen(
     val logs by viewModel.logs.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    // 拖曳排序拿起 / 讓位時的觸覺回饋
+    val haptic = LocalHapticFeedback.current
     // 非空狀態下 FAB 帶出的「從範本建立 / 空白建立」sheet
     var showTemplateSheet by remember { mutableStateOf(false) }
     // 清單搜尋查詢（旋轉 / 程序重建後保留）
@@ -389,8 +397,16 @@ fun HomeScreen(
                 )
 
                 val trimmed = query.trim()
-                val filtered = if (trimmed.isEmpty()) {
-                    routines
+                // 只有未搜尋（查詢為空）時可拖曳排序；查詢非空時停用（過濾清單上排序無意義）
+                val reorderEnabled = trimmed.isEmpty()
+
+                // 本地順序鏡像：拖曳期間即時重排讓動畫流暢，資料層只在放開時落地。
+                // 外部異動（新增 / 刪除 / 啟用切換 → routines 換了新清單）時重新對齊。
+                var ordered by remember { mutableStateOf(routines) }
+                LaunchedEffect(routines) { ordered = routines }
+
+                val filtered = if (reorderEnabled) {
+                    ordered
                 } else {
                     routines.filter { routineSearchText(it).contains(trimmed, ignoreCase = true) }
                 }
@@ -419,35 +435,61 @@ fun HomeScreen(
                 )
                 val sunLocation = remember(routines) { viewModel.sunLocation() }
 
+                // 長按整卡拿起、其餘卡片讓位；拖曳期間只動本地 ordered，放開才落地持久化。
+                val lazyListState = rememberLazyListState()
+                val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+                    ordered = ordered.toMutableList().apply { add(to.index, removeAt(from.index)) }
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                }
+
                 LazyColumn(
+                    state = lazyListState,
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(12.dp, 6.dp, 12.dp, 96.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(filtered, key = { it.id }) { routine ->
-                        RoutineCard(
-                            routine = routine,
-                            lastLog = logs.firstOrNull { it.routineId == routine.id },
-                            sunLocation = sunLocation,
-                            permIssues = missingPermissions(routine, permSnapshot),
-                            onClick = { onEdit(routine.id) },
-                            onToggle = { viewModel.setEnabled(routine.id, it) },
-                            // 含等待 / 朗讀 / HTTP 的程序可能跑數十秒，執行完才回報結果
-                            onRunNow = {
-                                viewModel.runNow(routine.id) { log ->
-                                    val failures = log?.failureCount ?: 0
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            if (failures > 0) {
-                                                "已執行「${routine.name}」（$failures 個動作失敗）"
-                                            } else {
-                                                "已執行「${routine.name}」"
-                                            }
-                                        )
+                        ReorderableItem(reorderableState, key = routine.id) { isDragging ->
+                            RoutineCard(
+                                routine = routine,
+                                lastLog = logs.firstOrNull { it.routineId == routine.id },
+                                sunLocation = sunLocation,
+                                permIssues = missingPermissions(routine, permSnapshot),
+                                isDragging = isDragging,
+                                // 長按整卡拿起排序；查詢中停用（過濾清單排序無意義）。
+                                // tap＝進入編輯、long-press＝拖曳，兩手勢不衝突。
+                                modifier = Modifier.longPressDraggableHandle(
+                                    enabled = reorderEnabled,
+                                    onDragStarted = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    },
+                                    onDragStopped = {
+                                        val fromIdx = routines.indexOfFirst { it.id == routine.id }
+                                        val toIdx = ordered.indexOfFirst { it.id == routine.id }
+                                        if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx) {
+                                            viewModel.reorder(fromIdx, toIdx)
+                                        }
+                                    }
+                                ),
+                                onClick = { onEdit(routine.id) },
+                                onToggle = { viewModel.setEnabled(routine.id, it) },
+                                // 含等待 / 朗讀 / HTTP 的程序可能跑數十秒，執行完才回報結果
+                                onRunNow = {
+                                    viewModel.runNow(routine.id) { log ->
+                                        val failures = log?.failureCount ?: 0
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                if (failures > 0) {
+                                                    "已執行「${routine.name}」（$failures 個動作失敗）"
+                                                } else {
+                                                    "已執行「${routine.name}」"
+                                                }
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -764,16 +806,20 @@ private fun RoutineCard(
     permIssues: List<PermIssue>,
     onClick: () -> Unit,
     onToggle: (Boolean) -> Unit,
-    onRunNow: () -> Unit
+    onRunNow: () -> Unit,
+    modifier: Modifier = Modifier,
+    isDragging: Boolean = false
 ) {
     val accent = triggerColor(routine.trigger)
+    // 拿起時浮起：陰影加深，放開後平滑彈回
+    val elevation by animateDpAsState(if (isDragging) 8.dp else 2.dp, label = "cardElevation")
 
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = elevation)
     ) {
         Column(modifier = Modifier.padding(12.dp, 10.dp)) {
             Text(

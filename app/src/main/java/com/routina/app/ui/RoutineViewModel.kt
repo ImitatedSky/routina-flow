@@ -39,6 +39,9 @@ class RoutineViewModel(application: Application) : AndroidViewModel(application)
 
     fun delete(id: String) = RoutineManager.delete(getApplication(), id)
 
+    /** 調整首頁清單先後順序（僅顯示順序，即時持久化） */
+    fun reorder(from: Int, to: Int) = RoutineManager.reorder(getApplication(), from, to)
+
     /**
      * 手動執行。含「等待」「朗讀」「HTTP」等長時動作時可能耗時數十秒，
      * 因此在 viewModelScope 內執行，完成後把紀錄交給 [onFinished]（主執行緒）。

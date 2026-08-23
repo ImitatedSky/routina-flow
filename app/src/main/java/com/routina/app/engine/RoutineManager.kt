@@ -35,6 +35,14 @@ object RoutineManager {
         save(appContext, routine.copy(enabled = enabled))
     }
 
+    /**
+     * 調整清單先後順序。純顯示順序，不影響任何觸發排程或監測，因此只需持久化，
+     * 不必重排鬧鐘 / 地理圍欄 / 監測服務。
+     */
+    fun reorder(context: Context, from: Int, to: Int) {
+        RoutineRepository.get(context.applicationContext).reorder(from, to)
+    }
+
     fun delete(context: Context, routineId: String) {
         val appContext = context.applicationContext
         AlarmScheduler.cancel(appContext, routineId)

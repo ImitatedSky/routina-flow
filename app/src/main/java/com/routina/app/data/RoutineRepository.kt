@@ -84,6 +84,14 @@ class RoutineRepository private constructor(context: Context) {
         persistRoutines()
     }
 
+    /** 調整清單先後：把 [from] 位置的元素移到 [to] 位置後持久化（順序＝list 順序） */
+    fun reorder(from: Int, to: Int) {
+        val current = _routines.value
+        if (from !in current.indices || to !in current.indices || from == to) return
+        _routines.value = current.toMutableList().apply { add(to, removeAt(from)) }
+        persistRoutines()
+    }
+
     fun setEnabled(id: String, enabled: Boolean) {
         val target = findById(id) ?: return
         upsert(target.copy(enabled = enabled))
