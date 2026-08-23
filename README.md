@@ -1,25 +1,23 @@
-<div align="center">
+<h1 align="center">Routina</h1>
 
-# Routina
+<p align="center"><b>Android 版的極簡「捷徑 / 日常程式」</b></p>
 
-**Android 版的極簡「捷徑 / 日常程式」**
+<p align="center">
+  一個觸發條件 × 一連串動作，把每天重複的手機操作自動化。<br />
+  不像 Tasker、MacroDroid 把功能全攤開——只做一件事：三十秒內建立一個一眼看得懂的例行程序。
+</p>
 
-一個觸發條件 × 一連串動作，把每天重複的手機操作自動化。
-不像 Tasker、MacroDroid 那樣把功能全攤開，Routina 只做一件事：
-**讓你三十秒內建立一個一眼看得懂的例行程序。**
+<p align="center">
+  <img alt="Android" src="https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android&logoColor=white" />
+  <img alt="minSdk" src="https://img.shields.io/badge/minSdk-26-1e88e5" />
+  <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.0-7f52ff?logo=kotlin&logoColor=white" />
+  <img alt="Compose" src="https://img.shields.io/badge/Jetpack_Compose-Material_3-4285f4" />
+  <img alt="APK" src="https://img.shields.io/badge/APK-~2.2_MB-43a047" />
+</p>
 
-[![Build](https://github.com/ImitatedSky/routina/actions/workflows/build-apk.yml/badge.svg)](https://github.com/ImitatedSky/routina/actions/workflows/build-apk.yml)
-[![Release](https://img.shields.io/github/v/release/ImitatedSky/routina?display_name=tag&label=release)](https://github.com/ImitatedSky/routina/releases/latest)
+<p align="center"><b>本地優先 · 無帳號 · 無後端 · 無廣告 · 無追蹤</b></p>
 
-![Platform](https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android&logoColor=white)
-![minSdk](https://img.shields.io/badge/minSdk-26-1e88e5)
-![Kotlin](https://img.shields.io/badge/Kotlin-2.0-7f52ff?logo=kotlin&logoColor=white)
-![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285f4)
-![APK](https://img.shields.io/badge/APK-~2.2%20MB-43a047)
-
-**本地優先 · 無帳號 · 無後端 · 無廣告 · 無追蹤**
-
-</div>
+<p align="center"><a href="https://github.com/ImitatedSky/routina/releases/latest"><b>⬇ 下載最新版 APK</b></a></p>
 
 ---
 
