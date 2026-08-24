@@ -87,6 +87,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -1090,29 +1091,36 @@ private fun RoutineGridCell(
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(Modifier.height(12.dp))
-            // 很細的彩色細線:每個動作一條(動作家族色),示意流程、不放文字
+            // 很細的彩色細線 + 縮排排版:第一條是觸發(文字色、不縮排,一定看得見),
+            // 動作各一條往內縮排（動作家族色）,用縮排表現「當觸發 → 這些動作」的層級
             Column(
                 modifier = Modifier.alpha(if (enabled) 1f else 0.5f),
                 verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
+                ThinLine(content, indent = 0.dp, widthFraction = 0.42f)
                 routine.actions.take(4).forEach { action ->
-                    ThinLine(actionColor(action))
+                    ThinLine(actionColor(action), indent = 20.dp, widthFraction = 0.5f)
                 }
             }
         }
     }
 }
 
-/** 很細的圓角彩色細線（格狀方塊示意動作用,約螢幕寬 60%、3dp 高） */
+/**
+ * 很細的圓角彩色細線;[indent] 為左縮排、[widthFraction] 為佔剩餘寬度的比例,
+ * 用縮排表現流程層級（觸發不縮排、動作往內縮）。
+ */
 @Composable
-private fun ThinLine(color: Color) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth(0.6f)
-            .height(3.dp)
-            .clip(RoundedCornerShape(50))
-            .background(color)
-    )
+private fun ThinLine(color: Color, indent: Dp, widthFraction: Float) {
+    Box(modifier = Modifier.fillMaxWidth().padding(start = indent)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(widthFraction)
+                .height(3.dp)
+                .clip(RoundedCornerShape(50))
+                .background(color)
+        )
+    }
 }
 
 /** 格狀方塊左上的觸發類型圖示:手動 / 定時 / 事件 */
