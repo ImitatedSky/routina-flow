@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -36,11 +37,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
@@ -57,6 +61,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -74,6 +79,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -93,7 +99,7 @@ import com.routina.app.model.RunLog
 import com.routina.app.model.TimeMode
 import com.routina.app.model.Trigger
 import com.routina.app.model.isLocation
-import com.routina.app.ui.blocks.RoutinePreviewStack
+import com.routina.app.ui.theme.blockContentColor
 import com.routina.app.ui.theme.triggerColor
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
@@ -1009,8 +1015,9 @@ private fun RoutineGridView(
 }
 
 /**
- * 格狀模式的一格方塊卡:上方名稱 + 執行／開關,一行狀態,下方以縮小版彩色積木填滿卡片
- * （用掉方塊中間的空白,也保留「有顏色」的視覺）。高度隨內容,不強制正方形留白。
+ * 格狀模式的一格方塊卡:iOS 捷徑式的彩色方塊。
+ * 啟用中以觸發家族色填滿整塊、停用則中性灰;左上觸發類型圖示、右上執行／開關,
+ * 底部名稱 + 一行狀態。簡約、不塞縮到看不清的積木。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1021,56 +1028,75 @@ private fun RoutineGridCell(
     onToggle: (Boolean) -> Unit,
     onRunNow: () -> Unit
 ) {
+    val enabled = routine.enabled
     val accent = triggerColor(routine.trigger)
+    // 啟用＝彩色方塊（文字色依對比自動選白/深）；停用＝中性灰方塊
+    val container = if (enabled) accent else MaterialTheme.colorScheme.surfaceVariant
+    val content = if (enabled) blockContentColor(accent) else MaterialTheme.colorScheme.onSurfaceVariant
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = container),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.fillMaxSize().padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    routine.name.ifBlank { "(未命名)" },
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = if (routine.enabled) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    modifier = Modifier.weight(1f)
+                Icon(
+                    imageVector = triggerIcon(routine.trigger),
+                    contentDescription = null,
+                    tint = content,
+                    modifier = Modifier.size(26.dp)
                 )
                 if (routine.trigger is Trigger.Manual) {
-                    IconButton(onClick = onRunNow, modifier = Modifier.size(34.dp)) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = "執行", tint = accent)
+                    IconButton(onClick = onRunNow, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = "執行", tint = content)
                     }
                 } else {
-                    Switch(checked = routine.enabled, onCheckedChange = onToggle)
+                    // 開關染成方塊文字色,在彩色底上維持單色乾淨、不與家族色打架
+                    Switch(
+                        checked = enabled,
+                        onCheckedChange = onToggle,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = content,
+                            checkedTrackColor = content.copy(alpha = 0.35f),
+                            checkedBorderColor = content.copy(alpha = 0.6f)
+                        )
+                    )
                 }
             }
+            Spacer(Modifier.weight(1f))
+            Text(
+                routine.name.ifBlank { "(未命名)" },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = content
+            )
+            Spacer(Modifier.height(2.dp))
             Text(
                 gridStatusLine(routine, sunLocation),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = content.copy(alpha = 0.8f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(Modifier.height(10.dp))
-            RoutinePreviewStack(
-                routine = routine,
-                modifier = Modifier.alpha(if (routine.enabled) 1f else 0.4f),
-                maxActions = 2
-            )
         }
     }
+}
+
+/** 格狀方塊左上的觸發類型圖示:手動 / 定時 / 事件 */
+private fun triggerIcon(trigger: Trigger): ImageVector = when (trigger) {
+    is Trigger.Manual -> Icons.Filled.TouchApp
+    is Trigger.Time -> Icons.Filled.Schedule
+    else -> Icons.Filled.Bolt
 }
 
 /** 格狀卡的一行狀態摘要：手動／已停用／定時給下次時刻，其餘給觸發摘要 */
