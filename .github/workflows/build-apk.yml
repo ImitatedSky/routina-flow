@@ -59,7 +59,6 @@ jobs:
     name: Signed release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    environment: release
     permissions:
       contents: write
     steps:
@@ -94,7 +93,16 @@ jobs:
           fi
           KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
           trap 'rm -f "$KEYSTORE_PATH"' EXIT
-          echo "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+          # 去掉貼上時可能夾帶的空白／換行（CR/LF），避免 base64 解碼失敗
+          if ! echo "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "$KEYSTORE_PATH"; then
+            echo "::error::KEYSTORE_BASE64 is not valid base64 — re-copy the whole base64 file and update the secret"
+            exit 1
+          fi
+          # 先驗證 keystore 能以密碼＋別名開啟,給出明確錯誤,而不是後面 gradle 的模糊訊息
+          if ! keytool -list -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::Cannot open keystore — check KEYSTORE_PASSWORD and KEY_ALIAS (alias should be 'routina')"
+            exit 1
+          fi
           export KEYSTORE_FILE="$KEYSTORE_PATH"
           ./gradlew assembleRelease --no-daemon --stacktrace
 
