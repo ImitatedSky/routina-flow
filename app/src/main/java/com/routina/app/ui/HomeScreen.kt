@@ -37,14 +37,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
@@ -61,7 +58,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -79,13 +75,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -99,7 +96,7 @@ import com.routina.app.model.RunLog
 import com.routina.app.model.TimeMode
 import com.routina.app.model.Trigger
 import com.routina.app.model.isLocation
-import com.routina.app.ui.theme.blockContentColor
+import com.routina.app.ui.theme.actionColor
 import com.routina.app.ui.theme.triggerColor
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
@@ -1015,9 +1012,9 @@ private fun RoutineGridView(
 }
 
 /**
- * 格狀模式的一格方塊卡:iOS 捷徑式的彩色方塊。
- * 啟用中以觸發家族色填滿整塊、停用則中性灰;左上觸發類型圖示、右上執行／開關,
- * 底部名稱 + 一行狀態。簡約、不塞縮到看不清的積木。
+ * 格狀模式的一格方塊卡:白底方塊,右上執行／開關,中間用「無文字的彩色線條」呈現流程結構
+ * （第一條＝觸發家族色,其後每個動作一條、縮排區分;一眼看出這程序有哪些彩色步驟,不塞看不清的字），
+ * 底部名稱 + 一行狀態。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1028,63 +1025,52 @@ private fun RoutineGridCell(
     onToggle: (Boolean) -> Unit,
     onRunNow: () -> Unit
 ) {
-    val enabled = routine.enabled
     val accent = triggerColor(routine.trigger)
-    // 啟用＝彩色方塊（文字色依對比自動選白/深）；停用＝中性灰方塊
-    val container = if (enabled) accent else MaterialTheme.colorScheme.surfaceVariant
-    val content = if (enabled) blockContentColor(accent) else MaterialTheme.colorScheme.onSurfaceVariant
     Card(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = container),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = triggerIcon(routine.trigger),
-                    contentDescription = null,
-                    tint = content,
-                    modifier = Modifier.size(26.dp)
-                )
                 if (routine.trigger is Trigger.Manual) {
                     IconButton(onClick = onRunNow, modifier = Modifier.size(30.dp)) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = "執行", tint = content)
+                        Icon(Icons.Filled.PlayArrow, contentDescription = "執行", tint = accent)
                     }
                 } else {
-                    // 開關染成方塊文字色,在彩色底上維持單色乾淨、不與家族色打架
-                    Switch(
-                        checked = enabled,
-                        onCheckedChange = onToggle,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = content,
-                            checkedTrackColor = content.copy(alpha = 0.35f),
-                            checkedBorderColor = content.copy(alpha = 0.6f)
-                        )
-                    )
+                    Switch(checked = routine.enabled, onCheckedChange = onToggle)
                 }
             }
+            Spacer(Modifier.weight(1f))
+            RoutineBars(
+                routine = routine,
+                modifier = Modifier.alpha(if (routine.enabled) 1f else 0.4f)
+            )
             Spacer(Modifier.weight(1f))
             Text(
                 routine.name.ifBlank { "(未命名)" },
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = content
+                color = if (routine.enabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
             )
-            Spacer(Modifier.height(2.dp))
             Text(
                 gridStatusLine(routine, sunLocation),
                 style = MaterialTheme.typography.bodySmall,
-                color = content.copy(alpha = 0.8f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1092,11 +1078,35 @@ private fun RoutineGridCell(
     }
 }
 
-/** 格狀方塊左上的觸發類型圖示:手動 / 定時 / 事件 */
-private fun triggerIcon(trigger: Trigger): ImageVector = when (trigger) {
-    is Trigger.Manual -> Icons.Filled.TouchApp
-    is Trigger.Time -> Icons.Filled.Schedule
-    else -> Icons.Filled.Bolt
+/**
+ * 無文字的彩色線條:第一條是觸發家族色,其後每個動作各一條（縮排）家族色,
+ * 只表達「流程有哪些彩色步驟」的結構,不放會看不清的文字。
+ */
+@Composable
+private fun RoutineBars(routine: Routine, modifier: Modifier = Modifier, maxActions: Int = 5) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        ColorBar(triggerColor(routine.trigger), indent = 0.dp)
+        routine.actions.take(maxActions).forEach { action ->
+            ColorBar(actionColor(action), indent = 14.dp)
+        }
+    }
+}
+
+/** 單一彩色線條:圓角色塊,依 [indent] 左縮排（觸發不縮、動作縮排以示層級） */
+@Composable
+private fun ColorBar(color: Color, indent: Dp) {
+    Box(modifier = Modifier.fillMaxWidth().padding(start = indent)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(11.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(color)
+        )
+    }
 }
 
 /** 格狀卡的一行狀態摘要：手動／已停用／定時給下次時刻，其餘給觸發摘要 */
