@@ -217,10 +217,12 @@
         <!--
           藍牙連接 / 斷開：ACL_CONNECTED / ACL_DISCONNECTED 屬於隱式廣播的豁免清單，
           可以靜態註冊，因此藍牙觸發不需要任何常駐服務。
+          exported=false：這兩個是受保護的系統廣播（protected-broadcast），只有系統能發，
+          且系統仍會送達非匯出的靜態接收器，所以外部 App 無法偽造藍牙連接來假觸發。
         -->
         <receiver
             android:name=".engine.BtAclReceiver"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
                 <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
@@ -232,10 +234,14 @@
             android:name=".engine.GeofenceReceiver"
             android:exported="false" />
 
+        <!--
+          exported=false：這四個都是受保護的系統廣播，只有系統能發、且系統仍會送達
+          非匯出的靜態接收器，所以外部 App 無法偽造開機／時間變更來假觸發。
+        -->
         <receiver
             android:name=".engine.BootReceiver"
             android:enabled="true"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />

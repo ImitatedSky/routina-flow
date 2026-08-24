@@ -2,6 +2,7 @@ package com.routina.app.engine
 
 import android.app.Activity
 import android.content.Intent
+import android.nfc.NfcAdapter
 import android.os.Bundle
 import android.widget.Toast
 import com.routina.app.data.RoutineRepository
@@ -43,6 +44,9 @@ class NfcDispatchActivity : Activity() {
     }
 
     private fun handleTag(intent: Intent?) {
+        // 這個 Activity 是匯出的：只接受真正的 NFC dispatch action，
+        // 擋掉任何 App 用任意 action 的顯式 intent 闖進派送路徑（EXTRA_TAG 檢查之外再加一層）。
+        if (intent?.action !in NFC_ACTIONS) return
         // 背景觸發的入口一律不得讓 App 崩潰
         runCatching {
             val uid = NfcTagReader.uidFrom(intent) ?: return
@@ -65,5 +69,12 @@ class NfcDispatchActivity : Activity() {
 
     private companion object {
         const val UNKNOWN_TAG = "這張 NFC 標籤還沒登錄到任何例行程序"
+
+        /** 只接受系統 NFC dispatch 的 action，其餘一律忽略 */
+        val NFC_ACTIONS = setOf(
+            NfcAdapter.ACTION_TECH_DISCOVERED,
+            NfcAdapter.ACTION_NDEF_DISCOVERED,
+            NfcAdapter.ACTION_TAG_DISCOVERED
+        )
     }
 }

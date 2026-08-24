@@ -268,6 +268,9 @@ object RoutineExecutor {
         canLaunchActivity: Boolean
     ): String? {
         val normalized = normalizeUrl(action.url)
+        // 擋掉危險 scheme：網址可能來自變數（如 {{通知內容}}），而通知內容是其他 App 可控的。
+        // 只擋明確有害的 scheme，仍保留正常網址與 App deep link（tel:/mailto:/geo:/自訂 scheme）。
+        requireSafeViewScheme(normalized)
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(normalized))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return launchOrNotify(context, routine, index, intent, "開啟 $normalized", canLaunchActivity)
@@ -1077,6 +1080,18 @@ object RoutineExecutor {
         return if (URL_SCHEME.containsMatchIn(trimmed)) trimmed else "https://$trimmed"
     }
 
+    /**
+     * 以 ACTION_VIEW 開啟前的安全檢查：擋掉可被濫用的 scheme。
+     * file:/content: 可能外洩本機檔案、javascript:/data: 可在瀏覽器情境執行、
+     * intent:/android-app: 可被用來繞道啟動其他元件——這些都不是「開啟網址」的正當用途。
+     */
+    private fun requireSafeViewScheme(url: String) {
+        val scheme = URL_SCHEME.find(url)?.value?.removeSuffix(":")?.lowercase()
+        if (scheme != null && scheme in UNSAFE_VIEW_SCHEMES) {
+            error("基於安全，不開啟 $scheme: 開頭的網址")
+        }
+    }
+
     private fun audioStream(stream: VolumeStream): Int = when (stream) {
         VolumeStream.MEDIA -> AudioManager.STREAM_MUSIC
         VolumeStream.RING -> AudioManager.STREAM_RING
@@ -1189,6 +1204,10 @@ object RoutineExecutor {
 
     /** 是否已帶 URI scheme（RFC 3986：字母開頭，後接字母/數字/+/-/.） */
     private val URL_SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:")
+
+    /** 「開啟網址」動作禁止的危險 scheme（見 requireSafeViewScheme） */
+    private val UNSAFE_VIEW_SCHEMES =
+        setOf("file", "content", "javascript", "data", "intent", "android-app")
 
     /** Android 的 SCREEN_BRIGHTNESS 值域 */
     private const val MAX_BRIGHTNESS = 255

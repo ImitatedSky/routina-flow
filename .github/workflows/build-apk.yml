@@ -8,62 +8,98 @@ on:
     branches: [master, main]
   workflow_dispatch:
 
-jobs:
-  build:
-    name: Build release APK
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+# 預設最小權限：一般建置（push / PR / dispatch）只需讀取原始碼。
+# 只有發佈 release 的 job 才提升到 contents: write（見下）。
+permissions:
+  contents: read
 
+# 同一分支/標籤的重複觸發自動取消前一個，避免兩個 release job 搶同一個 tag。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 一般建置：push / PR / 手動觸發時只做「能不能編譯」的檢查，
+  # 完全不碰簽章 secret（debug 簽章 fallback 足以驗證編譯）。
+  build:
+    name: Build (unsigned)
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      # 若設定了 KEYSTORE_BASE64 secret → 解碼成 keystore 並以 env 傳給 Gradle 走正式簽章，
-      # build 完成（或失敗）都刪除 keystore；否則沿用 debug 簽章。缺 secret 不會讓 CI 失敗。
-      - name: Build release APK
+      - name: Build (debug-signed fallback verifies compile)
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: routina-unsigned-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  # 正式發佈：只在推送版本標籤（v*）時跑，是唯一動用簽章 secret 的地方。
+  # 綁定 release 環境（可在 repo 設定加必要審核者 + 只允許 v* 標籤部署），
+  # 並提升 contents: write 供建立 Release。
+  release:
+    name: Signed release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      # 從 KEYSTORE_BASE64 secret 解碼成 keystore，以 env 傳給 Gradle 走正式簽章，
+      # build 完成（或失敗）都刪除 keystore。標籤發佈缺 keystore 時直接失敗，
+      # 絕不把 debug 簽章的版本當成正式 release 發出去。
+      - name: Build signed release APK
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "Release signing: decoding keystore from KEYSTORE_BASE64 secret"
-            KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
-            trap 'rm -f "$KEYSTORE_PATH"' EXIT
-            echo "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
-            export KEYSTORE_FILE="$KEYSTORE_PATH"
-            ./gradlew assembleRelease --no-daemon --stacktrace
-          else
-            echo "No KEYSTORE_BASE64 secret; building with debug-signing fallback"
-            ./gradlew assembleRelease --no-daemon --stacktrace
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 not set; refusing to publish an unsigned release"
+            exit 1
           fi
+          KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
+          trap 'rm -f "$KEYSTORE_PATH"' EXIT
+          echo "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+          export KEYSTORE_FILE="$KEYSTORE_PATH"
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: routina-release-apk
-          path: app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
-          retention-days: 90
-
-      # 推送版本標籤（v*）時，把 APK 以帶版本號的檔名發佈到 GitHub Releases。
-      # 每個標籤都是獨立且永久保留的 Release，使用者可依版本下載。
+      # 每個標籤都是獨立且永久保留的 Release，附帶版本號的 APK 檔名供依版本下載。
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
