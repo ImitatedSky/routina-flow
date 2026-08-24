@@ -64,7 +64,8 @@ object CameraCapture {
         context: Context,
         lensBack: Boolean,
         count: Int,
-        intervalMs: Long
+        intervalMs: Long,
+        shareToGallery: Boolean = false
     ): Result {
         val appContext = context.applicationContext
         val selector = if (lensBack) {
@@ -92,7 +93,7 @@ object CameraCapture {
         try {
             val shots = ArrayList<Shot>(count)
             repeat(count) { index ->
-                shots += takeOne(appContext, imageCapture)
+                shots += takeOne(appContext, imageCapture, shareToGallery)
                 if (index < count - 1 && intervalMs > 0) delay(intervalMs)
             }
             return Result(shots.map { it.uri }, shots.lastOrNull()?.displayName.orEmpty())
@@ -121,16 +122,22 @@ object CameraCapture {
         }
 
     /**
-     * 擷取一張並存入相簿；成功回傳可跨 App 檢視的 content URI 與檔名，失敗（含逾時）丟例外。
+     * 擷取一張並存檔；成功回傳可跨 App 檢視的 content URI 與檔名，失敗（含逾時）丟例外。
      *
-     * - API 29+：MediaStore insert 回傳的 `content://media/...` URI 直接可用於 ACTION_VIEW
-     * - API ≤28：檔案存進公開相簿目錄，再用 FileProvider 產生 content URI（file:// 無法跨 App 讀）
+     * 預設 [shareToGallery] = false → 存進 **App 私有外部目錄**（其他 App 讀不到、不進相簿／雲端備份），
+     * 以 FileProvider 產生 content URI 供通知點擊檢視。
+     * [shareToGallery] = true 才存進公開相簿：API 29+ 用 MediaStore、API ≤28 用公開目錄。
      */
-    private suspend fun takeOne(context: Context, imageCapture: ImageCapture): Shot =
+    private suspend fun takeOne(
+        context: Context,
+        imageCapture: ImageCapture,
+        shareToGallery: Boolean
+    ): Shot =
         suspendCancellableCoroutine { cont ->
             val name = "Routina_" + timestamp()
             val displayName = "$name.jpg"
-            val useMediaStore = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+            // 只有「存到公開相簿」且 API 29+ 才走 MediaStore；其餘（私有、或公開的 ≤28）走檔案 + FileProvider
+            val useMediaStore = shareToGallery && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
             var targetFile: File? = null
             val options = if (useMediaStore) {
                 val values = ContentValues().apply {
@@ -147,12 +154,17 @@ object CameraCapture {
                     values
                 ).build()
             } else {
-                // API 28 以下：寫入公開相簿目錄（需 WRITE_EXTERNAL_STORAGE，maxSdk 28）
-                @Suppress("DEPRECATION")
-                val dir = File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-                    RELATIVE_DIR
-                ).apply { mkdirs() }
+                val dir = if (shareToGallery) {
+                    // API ≤28 存公開相簿目錄（需 WRITE_EXTERNAL_STORAGE，maxSdk 28）
+                    @Suppress("DEPRECATION")
+                    File(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                        RELATIVE_DIR
+                    )
+                } else {
+                    // 預設：App 私有外部目錄，免權限、其他 App 讀不到
+                    File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), RELATIVE_DIR)
+                }.apply { mkdirs() }
                 val file = File(dir, displayName)
                 targetFile = file
                 ImageCapture.OutputFileOptions.Builder(file).build()

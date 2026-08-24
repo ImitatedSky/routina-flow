@@ -391,7 +391,12 @@ fun ActionEditDialog(
                     Spacer(Modifier.height(4.dp))
                     LensChips(current.lensBack) { draft = current.copy(lensBack = it) }
                     NotifyResultSwitch(current.notify) { draft = current.copy(notify = it) }
-                    CaptureStorageNotice()
+                    ShareToGallerySwitch(
+                        checked = current.shareToGallery,
+                        label = "存到公開相簿",
+                        hint = "關閉（預設）＝只存 App 私有空間，其他 App 讀不到、也不進相簿與雲端備份；" +
+                            "開啟＝另存到系統相簿，方便瀏覽但裝置上其他 App 看得到。"
+                    ) { draft = current.copy(shareToGallery = it) }
                     CaptureBackgroundNotice()
                     CameraPermissionNotice()
                 }
@@ -421,7 +426,12 @@ fun ActionEditDialog(
                         onExprChange = { draft = current.copy(intervalExpr = it) }
                     )
                     NotifyResultSwitch(current.notify) { draft = current.copy(notify = it) }
-                    CaptureStorageNotice()
+                    ShareToGallerySwitch(
+                        checked = current.shareToGallery,
+                        label = "存到公開相簿",
+                        hint = "關閉（預設）＝只存 App 私有空間，其他 App 讀不到、也不進相簿與雲端備份；" +
+                            "開啟＝另存到系統相簿，方便瀏覽但裝置上其他 App 看得到。"
+                    ) { draft = current.copy(shareToGallery = it) }
                     CaptureBackgroundNotice()
                     CameraPermissionNotice()
                 }
@@ -436,13 +446,12 @@ fun ActionEditDialog(
                         tokenGroups = tokenGroups,
                         onExprChange = { draft = current.copy(secondsExpr = it) }
                     )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "存入音樂資料夾（音樂/Routina）；執行紀錄會附上存檔位置。" +
-                            "在 Android 10 以上為公開音樂目錄，裝置上的其他 App 也看得到。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    ShareToGallerySwitch(
+                        checked = current.shareToGallery,
+                        label = "存到公開音樂資料夾",
+                        hint = "關閉（預設）＝只存 App 私有空間，其他 App 讀不到；" +
+                            "開啟＝另存到系統音樂資料夾，裝置上其他 App 看得到。"
+                    ) { draft = current.copy(shareToGallery = it) }
                     NotifyResultSwitch(current.notify) { draft = current.copy(notify = it) }
                     CaptureBackgroundNotice(microphone = true)
                     MicrophonePermissionNotice()
@@ -811,16 +820,29 @@ private fun LensChips(lensBack: Boolean, onSelect: (Boolean) -> Unit) {
 }
 
 /**
- * 擷取結果的存放位置與可見性告知（拍照 / 連拍用）。
+ * 「存到公開相簿／音樂」的每動作開關。
  *
- * 相片會存進裝置的公開相簿，**裝置上的其他 App 也看得到**——提醒使用者留意隱私。
- * 錄音的位置與可見性直接寫在錄音編輯器的說明文字裡（含 Android 版本差異）。
+ * 預設關閉＝擷取的相片／音檔只存 App 私有空間（其他 App 讀不到、不進相簿與雲端備份）；
+ * 開啟才另存到系統相簿／音樂目錄。把隱私設為預設，公開改為明確的每動作選擇。
  */
 @Composable
-private fun CaptureStorageNotice() {
+private fun ShareToGallerySwitch(
+    checked: Boolean,
+    label: String,
+    hint: String,
+    onChange: (Boolean) -> Unit
+) {
     Spacer(Modifier.height(12.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
     Text(
-        "拍攝的相片會存入裝置的公開相簿（相片/Routina），裝置上的其他 App 也看得到。",
+        hint,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )

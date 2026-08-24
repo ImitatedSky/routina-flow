@@ -585,7 +585,10 @@ object RoutineExecutor {
         requireCameraPermission(context)
         requireCaptureForeground(fgsSwitch, CaptureFgsType.CAMERA, "相機")
         return try {
-            val result = CameraCapture.capture(context, action.lensBack, count = 1, intervalMs = 0L)
+            val result = CameraCapture.capture(
+                context, action.lensBack, count = 1, intervalMs = 0L,
+                shareToGallery = action.shareToGallery
+            )
             if (result.uris.isEmpty()) error("擷取失敗")
             // 相片的 content URI 設為輸出，後續動作可用 {{result}} 引用
             ctx.lastOutput = result.uris.lastOrNull()?.toString() ?: ""
@@ -598,7 +601,7 @@ object RoutineExecutor {
                     fileName = result.displayName
                 )
             }
-            "已存入相簿 相片/Routina"
+            captureStorageNote(action.shareToGallery)
         } finally {
             fgsSwitch?.restore()
         }
@@ -616,7 +619,10 @@ object RoutineExecutor {
         val count = resolveNum(action.countExpr, action.count, Action.BURST_COUNT_SAFE, ctx)
         val interval = resolveNum(action.intervalExpr, action.intervalMs, Action.BURST_INTERVAL_SAFE, ctx)
         return try {
-            val result = CameraCapture.capture(context, action.lensBack, count, interval.toLong())
+            val result = CameraCapture.capture(
+                context, action.lensBack, count, interval.toLong(),
+                shareToGallery = action.shareToGallery
+            )
             if (result.uris.isEmpty()) error("擷取失敗")
             // 最後一張的 content URI 設為輸出
             ctx.lastOutput = result.uris.lastOrNull()?.toString() ?: ""
@@ -629,7 +635,7 @@ object RoutineExecutor {
                     fileName = result.displayName
                 )
             }
-            "已存入相簿 ${result.uris.size} 張"
+            "${captureStorageNote(action.shareToGallery)}（${result.uris.size} 張）"
         } finally {
             fgsSwitch?.restore()
         }
@@ -651,7 +657,7 @@ object RoutineExecutor {
         requireCaptureForeground(fgsSwitch, CaptureFgsType.MICROPHONE, "麥克風")
         val seconds = resolveNum(action.secondsExpr, action.seconds, Action.RECORD_SECONDS_SAFE, ctx)
         return try {
-            val result = AudioRecorder.record(context, seconds)
+            val result = AudioRecorder.record(context, seconds, action.shareToGallery)
             // 音檔的 content URI 設為輸出（可能為 null，代空字串）
             ctx.lastOutput = result.uri?.toString() ?: ""
             if (action.notify) {
@@ -1011,6 +1017,10 @@ object RoutineExecutor {
         }
         manager.notify(id, builder.build())
     }
+
+    /** 擷取存檔位置的紀錄說明：預設 App 私有,只有選了「存到公開相簿」才進公開空間 */
+    private fun captureStorageNote(shareToGallery: Boolean): String =
+        if (shareToGallery) "已存入公開相簿（其他 App 可讀）" else "已存入 App 私有空間"
 
     // ---------- 共用工具 ----------
 

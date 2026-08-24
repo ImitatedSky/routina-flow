@@ -477,7 +477,9 @@ sealed class Action {
     @SerialName("take_photo")
     data class TakePhoto(
         val lensBack: Boolean = true,
-        @SerialName("notify") val notify: Boolean = true
+        @SerialName("notify") val notify: Boolean = true,
+        /** true＝另存一份到公開相簿（其他 App 可讀）；預設 false＝只存 App 私有空間 */
+        val shareToGallery: Boolean = false
     ) : Action()
 
     /**
@@ -492,7 +494,9 @@ sealed class Action {
         val intervalMs: Int = 500,
         @SerialName("notify") val notify: Boolean = true,
         val countExpr: String = "",
-        val intervalExpr: String = ""
+        val intervalExpr: String = "",
+        /** true＝另存一份到公開相簿（其他 App 可讀）；預設 false＝只存 App 私有空間 */
+        val shareToGallery: Boolean = false
     ) : Action()
 
     /**
@@ -504,7 +508,9 @@ sealed class Action {
     data class RecordAudio(
         val seconds: Int = 5,
         @SerialName("notify") val notify: Boolean = true,
-        val secondsExpr: String = ""
+        val secondsExpr: String = "",
+        /** true＝另存一份到公開音樂資料夾（其他 App 可讀）；預設 false＝只存 App 私有空間 */
+        val shareToGallery: Boolean = false
     ) : Action()
 
     /** 播放系統音效（[type]：NOTIFICATION／ALARM／RINGTONE），無額外權限需求 */

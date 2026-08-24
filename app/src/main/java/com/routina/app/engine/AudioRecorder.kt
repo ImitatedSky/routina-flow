@@ -37,12 +37,17 @@ object AudioRecorder {
      */
     data class Result(val displayPath: String, val uri: Uri?)
 
-    /** 錄製 [seconds] 秒音訊並存檔，回傳存檔位置說明。錄製或存檔失敗時丟例外。 */
-    suspend fun record(context: Context, seconds: Int): Result {
+    /**
+     * 錄製 [seconds] 秒音訊並存檔，回傳存檔位置說明。錄製或存檔失敗時丟例外。
+     *
+     * 預設 [shareToGallery] = false → 存進 App 私有外部目錄（其他 App 讀不到）。
+     * 只有 [shareToGallery] = true 且 API 29+ 才存進公開的 MediaStore 音樂目錄。
+     */
+    suspend fun record(context: Context, seconds: Int, shareToGallery: Boolean = false): Result {
         val appContext = context.applicationContext
         val name = "Routina_" + timestamp()
 
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        return if (shareToGallery && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             recordToMediaStore(appContext, name, seconds)
         } else {
             recordToAppDir(appContext, name, seconds)

@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  FileProvider 對外分享的路徑（僅 API ≤28 的擷取路徑會用到；API 29+ 走 MediaStore URI）。
-  - external-path：拍照存入的公開相簿 Pictures/Routina
-  - external-files-path：錄音存入的 App 專屬外部目錄 Music/Routina
+  FileProvider 對外分享的路徑（讓通知點擊能用系統檢視器開啟擷取的相片／音檔）。
+  - external-files-path capture_pictures_private / capture_music：App 私有外部目錄
+    Pictures/Routina、Music/Routina（預設儲存位置，其他 App 讀不到，靠 FileProvider 逐一授權）
+  - external-path capture_pictures：僅「存到公開相簿」且 API ≤28 時用到的公開相簿 Pictures/Routina
+    （API 29+ 存公開相簿走 MediaStore URI，不經 FileProvider）
 -->
 <paths>
-    <external-path
-        name="capture_pictures"
+    <external-files-path
+        name="capture_pictures_private"
         path="Pictures/Routina/" />
     <external-files-path
         name="capture_music"
         path="Music/Routina/" />
+    <external-path
+        name="capture_pictures"
+        path="Pictures/Routina/" />
 </paths>
