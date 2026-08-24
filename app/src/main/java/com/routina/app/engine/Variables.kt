@@ -58,4 +58,37 @@ object VariableResolver {
         key in KNOWN_KEYS -> ""
         else -> null
     }
+
+    /** 各 token 的範例值，只給編輯畫面的預覽用（執行時代入的是當下實際值）。 */
+    private val SAMPLE = mapOf(
+        "時間" to "21:45",
+        "日期" to "8/24",
+        "星期" to "週日",
+        "電量" to "87",
+        "通知標題" to "範例通知",
+        "通知內容" to "這是通知內容",
+        "通知來源App" to "訊息",
+        "Wi-Fi名稱" to "MyWiFi",
+        "藍牙裝置" to "我的耳機",
+        "地點名稱" to "公司",
+        "標籤名稱" to "床頭標籤"
+    )
+
+    /**
+     * 用範例值把 [template] 的變數 token 代換成看得懂的樣子，供編輯畫面預覽。
+     * 不參與實際執行；未知 token 原樣保留（無 token 直接回傳，與 [resolve] 一致）。
+     */
+    fun previewResolve(template: String): String {
+        if (!template.contains("{{")) return template
+        return TOKEN.replace(template) { match ->
+            sampleValue(match.groupValues[1].trim()) ?: match.value
+        }
+    }
+
+    private fun sampleValue(key: String): String? = when {
+        key == "result" -> "上一步的結果"
+        key.startsWith("var:") -> "「${key.removePrefix("var:").trim()}」的值"
+        key.startsWith("觸發:") -> sampleValue(key.removePrefix("觸發:").trim()) ?: "…"
+        else -> SAMPLE[key]
+    }
 }

@@ -65,6 +65,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.routina.app.engine.RoutineExecutor
+import com.routina.app.engine.VariableResolver
 import com.routina.app.model.Action
 import com.routina.app.model.AppTarget
 import com.routina.app.model.RingerModeType
@@ -648,6 +649,17 @@ fun VariableTextField(
             supportingText = supportingText?.let { { Text(it) } },
             modifier = Modifier.fillMaxWidth()
         )
+        // 含變數時,用範例值即時預覽「執行後會變成什麼」,讓變數更直觀好懂
+        if (field.text.contains("{{")) {
+            Text(
+                text = "預覽：${VariableResolver.previewResolve(field.text)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+            )
+        }
         Box {
             TextButton(onClick = { menuOpen = true }) { Text("＋ 插入變數") }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {

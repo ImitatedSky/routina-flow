@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Card
@@ -154,6 +156,44 @@ object RoutineTemplates {
                     actions = listOf(
                         Action.Dnd(on = true),
                         Action.Brightness(percent = 20)
+                    )
+                )
+            }
+        ),
+        // 以下兩個示範「變數」怎麼用：文字動作組出含 {{變數}} 的字串,後續動作再引用。
+        RoutineTemplate(
+            id = "report",
+            title = "報時分享",
+            description = "手動：組出「現在幾點＋電量」再分享（變數範例）",
+            color = RoutinaColors.ActionShare,
+            icon = Icons.Filled.Share,
+            needsSetup = false,
+            build = {
+                Routine(
+                    name = "報時分享",
+                    enabled = false,
+                    trigger = Trigger.Manual,
+                    actions = listOf(
+                        Action.Text(template = "現在 {{時間}}，電量還有 {{電量}}%"),
+                        Action.Share(text = "{{result}}")
+                    )
+                )
+            }
+        ),
+        RoutineTemplate(
+            id = "forward-notif",
+            title = "通知轉發",
+            description = "收到通知就把來源＋標題＋內容複製起來（變數範例，需通知存取）",
+            color = RoutinaColors.TriggerNotificationPosted,
+            icon = Icons.Filled.Notifications,
+            needsSetup = true,
+            build = {
+                Routine(
+                    name = "通知轉發",
+                    enabled = false,
+                    trigger = Trigger.NotificationPosted(),
+                    actions = listOf(
+                        Action.Clipboard(text = "{{通知來源App}}｜{{通知標題}}：{{通知內容}}")
                     )
                 )
             }
