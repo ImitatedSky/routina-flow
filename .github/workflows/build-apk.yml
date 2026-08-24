@@ -91,6 +91,14 @@ jobs:
             echo "::error::KEYSTORE_BASE64 not set; refusing to publish an unsigned release"
             exit 1
           fi
+          # 密碼必須是純 ASCII。常見雷:用中文輸入法打密碼時把半形「-」變成全形「－」,
+          # Java 簽章會丟「Password is not ASCII」。這裡先擋下,給明確訊息。
+          for var in KEYSTORE_PASSWORD KEY_PASSWORD; do
+            if printf '%s' "${!var}" | LC_ALL=C grep -q '[^ -~]'; then
+              echo "::error::$var contains a non-ASCII character (e.g. a full-width dash from an IME). Re-enter it as plain ASCII by copy-paste."
+              exit 1
+            fi
+          done
           KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
           trap 'rm -f "$KEYSTORE_PATH"' EXIT
           # 去掉貼上時可能夾帶的空白／換行（CR/LF），避免 base64 解碼失敗
