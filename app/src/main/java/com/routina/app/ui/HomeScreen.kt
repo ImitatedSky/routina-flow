@@ -12,7 +12,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -94,6 +93,7 @@ import com.routina.app.model.RunLog
 import com.routina.app.model.TimeMode
 import com.routina.app.model.Trigger
 import com.routina.app.model.isLocation
+import com.routina.app.ui.blocks.RoutinePreviewStack
 import com.routina.app.ui.theme.triggerColor
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
@@ -1008,7 +1008,10 @@ private fun RoutineGridView(
     }
 }
 
-/** 格狀模式的一格方塊卡 */
+/**
+ * 格狀模式的一格方塊卡:上方名稱 + 執行／開關,一行狀態,下方以縮小版彩色積木填滿卡片
+ * （用掉方塊中間的空白,也保留「有顏色」的視覺）。高度隨內容,不強制正方形留白。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RoutineGridCell(
@@ -1021,24 +1024,29 @@ private fun RoutineGridCell(
     val accent = triggerColor(routine.trigger)
     Card(
         onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(accent.copy(alpha = if (routine.enabled) 1f else 0.4f))
+                Text(
+                    routine.name.ifBlank { "(未命名)" },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (routine.enabled) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.weight(1f)
                 )
                 if (routine.trigger is Trigger.Manual) {
                     IconButton(onClick = onRunNow, modifier = Modifier.size(34.dp)) {
@@ -1048,26 +1056,18 @@ private fun RoutineGridCell(
                     Switch(checked = routine.enabled, onCheckedChange = onToggle)
                 }
             }
-            Spacer(Modifier.weight(1f))
-            Text(
-                routine.name.ifBlank { "(未命名)" },
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                color = if (routine.enabled) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
-            )
-            Spacer(Modifier.height(4.dp))
             Text(
                 gridStatusLine(routine, sunLocation),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(10.dp))
+            RoutinePreviewStack(
+                routine = routine,
+                modifier = Modifier.alpha(if (routine.enabled) 1f else 0.4f),
+                maxActions = 2
             )
         }
     }
