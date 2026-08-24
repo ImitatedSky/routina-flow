@@ -11,6 +11,8 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -23,8 +25,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,9 +38,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -66,6 +74,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -85,7 +94,6 @@ import com.routina.app.model.RunLog
 import com.routina.app.model.TimeMode
 import com.routina.app.model.Trigger
 import com.routina.app.model.isLocation
-import com.routina.app.ui.blocks.RoutinePreviewStack
 import com.routina.app.ui.theme.triggerColor
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
@@ -105,12 +113,12 @@ fun HomeScreen(
     val logs by viewModel.logs.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    // 拖曳排序拿起 / 讓位時的觸覺回饋
-    val haptic = LocalHapticFeedback.current
     // 非空狀態下 FAB 帶出的「從範本建立 / 空白建立」sheet
     var showTemplateSheet by remember { mutableStateOf(false) }
     // 清單搜尋查詢（旋轉 / 程序重建後保留）
     var query by rememberSaveable { mutableStateOf("") }
+    // 首頁呈現方式（清單／格狀），持久化於 SharedPreferences，重開 App 保留
+    var viewMode by remember { mutableStateOf(loadHomeViewMode(context)) }
 
     // 權限狀態：從系統設定頁返回時（ON_RESUME）重新檢查，授權完成後引導卡要立即消失
     var canScheduleExact by remember { mutableStateOf(viewModel.canScheduleExactAlarms()) }
@@ -228,6 +236,38 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("Routina", fontWeight = FontWeight.Bold) },
                 actions = {
+                    IconButton(onClick = {
+                        if (viewMode != HomeViewMode.LIST) {
+                            viewMode = HomeViewMode.LIST
+                            saveHomeViewMode(context, HomeViewMode.LIST)
+                        }
+                    }) {
+                        Icon(
+                            Icons.Filled.ViewList,
+                            contentDescription = "清單檢視",
+                            tint = if (viewMode == HomeViewMode.LIST) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                    IconButton(onClick = {
+                        if (viewMode != HomeViewMode.GRID) {
+                            viewMode = HomeViewMode.GRID
+                            saveHomeViewMode(context, HomeViewMode.GRID)
+                        }
+                    }) {
+                        Icon(
+                            Icons.Filled.GridView,
+                            contentDescription = "格狀檢視",
+                            tint = if (viewMode == HomeViewMode.GRID) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
                     IconButton(onClick = onOpenLogs) {
                         Icon(Icons.Filled.History, contentDescription = "執行紀錄")
                     }
@@ -397,16 +437,11 @@ fun HomeScreen(
                 )
 
                 val trimmed = query.trim()
-                // 只有未搜尋（查詢為空）時可拖曳排序；查詢非空時停用（過濾清單上排序無意義）
-                val reorderEnabled = trimmed.isEmpty()
+                // 拖曳排序只在「清單」模式且未搜尋時可用（格狀為概覽、過濾清單排序無意義）
+                val reorderEnabled = trimmed.isEmpty() && viewMode == HomeViewMode.LIST
 
-                // 本地順序鏡像：拖曳期間即時重排讓動畫流暢，資料層只在放開時落地。
-                // 外部異動（新增 / 刪除 / 啟用切換 → routines 換了新清單）時重新對齊。
-                var ordered by remember { mutableStateOf(routines) }
-                LaunchedEffect(routines) { ordered = routines }
-
-                val filtered = if (reorderEnabled) {
-                    ordered
+                val filtered = if (trimmed.isEmpty()) {
+                    routines
                 } else {
                     routines.filter { routineSearchText(it).contains(trimmed, ignoreCase = true) }
                 }
@@ -418,7 +453,7 @@ fun HomeScreen(
                 }
 
                 // 一次查好權限狀態與日出日落座標，交給每張卡片彙整自己的狀態晶片，
-                // 避免在 LazyColumn 每次重繪時對每張卡片重複查詢系統
+                // 避免在清單每次重繪時對每張卡片重複查詢系統
                 val permSnapshot = PermSnapshot(
                     canScheduleExact = canScheduleExact,
                     notificationsEnabled = notificationsEnabled,
@@ -435,62 +470,45 @@ fun HomeScreen(
                 )
                 val sunLocation = remember(routines) { viewModel.sunLocation() }
 
-                // 長按整卡拿起、其餘卡片讓位；拖曳期間只動本地 ordered，放開才落地持久化。
-                val lazyListState = rememberLazyListState()
-                val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-                    ordered = ordered.toMutableList().apply { add(to.index, removeAt(from.index)) }
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-
-                LazyColumn(
-                    state = lazyListState,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(12.dp, 6.dp, 12.dp, 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(filtered, key = { it.id }) { routine ->
-                        ReorderableItem(reorderableState, key = routine.id) { isDragging ->
-                            RoutineCard(
-                                routine = routine,
-                                lastLog = logs.firstOrNull { it.routineId == routine.id },
-                                sunLocation = sunLocation,
-                                permIssues = missingPermissions(routine, permSnapshot),
-                                isDragging = isDragging,
-                                // 長按整卡拿起排序；查詢中停用（過濾清單排序無意義）。
-                                // tap＝進入編輯、long-press＝拖曳，兩手勢不衝突。
-                                modifier = Modifier.longPressDraggableHandle(
-                                    enabled = reorderEnabled,
-                                    onDragStarted = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    },
-                                    onDragStopped = {
-                                        val fromIdx = routines.indexOfFirst { it.id == routine.id }
-                                        val toIdx = ordered.indexOfFirst { it.id == routine.id }
-                                        if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx) {
-                                            viewModel.reorder(fromIdx, toIdx)
-                                        }
-                                    }
-                                ),
-                                onClick = { onEdit(routine.id) },
-                                onToggle = { viewModel.setEnabled(routine.id, it) },
-                                // 含等待 / 朗讀 / HTTP 的程序可能跑數十秒，執行完才回報結果
-                                onRunNow = {
-                                    viewModel.runNow(routine.id) { log ->
-                                        val failures = log?.failureCount ?: 0
-                                        scope.launch {
-                                            snackbarHostState.showSnackbar(
-                                                if (failures > 0) {
-                                                    "已執行「${routine.name}」（$failures 個動作失敗）"
-                                                } else {
-                                                    "已執行「${routine.name}」"
-                                                }
-                                            )
-                                        }
-                                    }
+                // 兩種呈現共用：立即執行並回報結果
+                // （含等待 / 朗讀 / HTTP 的程序可能跑數十秒，執行完才回報結果）
+                val runNow: (Routine) -> Unit = { routine ->
+                    viewModel.runNow(routine.id) { log ->
+                        val failures = log?.failureCount ?: 0
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                if (failures > 0) {
+                                    "已執行「${routine.name}」（$failures 個動作失敗）"
+                                } else {
+                                    "已執行「${routine.name}」"
                                 }
                             )
                         }
                     }
+                }
+
+                when (viewMode) {
+                    HomeViewMode.LIST -> RoutineListView(
+                        items = filtered,
+                        logs = logs,
+                        sunLocation = sunLocation,
+                        permSnapshot = permSnapshot,
+                        reorderEnabled = reorderEnabled,
+                        onReorderCommit = { from, to -> viewModel.reorder(from, to) },
+                        onEdit = onEdit,
+                        onToggle = { id, enabled -> viewModel.setEnabled(id, enabled) },
+                        onRunNow = runNow,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    HomeViewMode.GRID -> RoutineGridView(
+                        items = filtered,
+                        sunLocation = sunLocation,
+                        onEdit = onEdit,
+                        onToggle = { id, enabled -> viewModel.setEnabled(id, enabled) },
+                        onRunNow = runNow,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
@@ -796,23 +814,108 @@ private fun NoSearchResults(modifier: Modifier = Modifier) {
     }
 }
 
-/** 清單卡片：名稱 + 狀態晶片列 + 縮小版唯讀積木堆疊 + 啟用開關／立即執行 */
+/** 首頁的兩種呈現方式：清單（一列一張、精簡）／格狀（2 欄方塊、概覽） */
+enum class HomeViewMode { LIST, GRID }
+
+private const val UI_PREFS = "routina_ui"
+private const val KEY_VIEW_MODE = "home_view_mode"
+
+/** 讀取上次選的呈現方式；沒存過或值異常時預設「清單」 */
+private fun loadHomeViewMode(context: Context): HomeViewMode = runCatching {
+    context.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
+        .getString(KEY_VIEW_MODE, null)
+        ?.let { HomeViewMode.valueOf(it) } ?: HomeViewMode.LIST
+}.getOrDefault(HomeViewMode.LIST)
+
+private fun saveHomeViewMode(context: Context, mode: HomeViewMode) {
+    runCatching {
+        context.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_VIEW_MODE, mode.name).apply()
+    }
+}
+
+/**
+ * 清單模式：一列一張精簡卡（名稱 + 狀態晶片 + 執行／開關，**不顯示觸發／動作積木**），
+ * 未搜尋時可長按整卡拖曳排序（沿用 v0.17.0，放開才落地持久化）。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RoutineCard(
+private fun RoutineListView(
+    items: List<Routine>,
+    logs: List<RunLog>,
+    sunLocation: AlarmScheduler.SunLocation?,
+    permSnapshot: PermSnapshot,
+    reorderEnabled: Boolean,
+    onReorderCommit: (Int, Int) -> Unit,
+    onEdit: (String) -> Unit,
+    onToggle: (String, Boolean) -> Unit,
+    onRunNow: (Routine) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    // 本地順序鏡像：拖曳期間即時重排讓動畫流暢，放開才落地
+    var ordered by remember { mutableStateOf(items) }
+    LaunchedEffect(items) { ordered = items }
+
+    val lazyListState = rememberLazyListState()
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        ordered = ordered.toMutableList().apply { add(to.index, removeAt(from.index)) }
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
+
+    LazyColumn(
+        state = lazyListState,
+        modifier = modifier,
+        contentPadding = PaddingValues(12.dp, 6.dp, 12.dp, 96.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(ordered, key = { it.id }) { routine ->
+            ReorderableItem(reorderableState, key = routine.id) { isDragging ->
+                RoutineListRow(
+                    routine = routine,
+                    lastLog = logs.firstOrNull { it.routineId == routine.id },
+                    sunLocation = sunLocation,
+                    permIssues = missingPermissions(routine, permSnapshot),
+                    isDragging = isDragging,
+                    // 長按整卡拿起排序；tap＝進入編輯，兩手勢不衝突
+                    modifier = Modifier.longPressDraggableHandle(
+                        enabled = reorderEnabled,
+                        onDragStarted = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        },
+                        onDragStopped = {
+                            val fromIdx = items.indexOfFirst { it.id == routine.id }
+                            val toIdx = ordered.indexOfFirst { it.id == routine.id }
+                            if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx) {
+                                onReorderCommit(fromIdx, toIdx)
+                            }
+                        }
+                    ),
+                    onClick = { onEdit(routine.id) },
+                    onToggle = { onToggle(routine.id, it) },
+                    onRunNow = { onRunNow(routine) }
+                )
+            }
+        }
+    }
+}
+
+/** 清單模式的一列：家族色塊 + 名稱 + 狀態晶片 + 執行／開關（手動只有執行） */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RoutineListRow(
     routine: Routine,
     lastLog: RunLog?,
     sunLocation: AlarmScheduler.SunLocation?,
     permIssues: List<PermIssue>,
+    isDragging: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onToggle: (Boolean) -> Unit,
-    onRunNow: () -> Unit,
-    modifier: Modifier = Modifier,
-    isDragging: Boolean = false
+    onRunNow: () -> Unit
 ) {
     val accent = triggerColor(routine.trigger)
-    // 拿起時浮起：陰影加深，放開後平滑彈回
-    val elevation by animateDpAsState(if (isDragging) 8.dp else 2.dp, label = "cardElevation")
+    val elevation by animateDpAsState(if (isDragging) 8.dp else 2.dp, label = "listRowElevation")
 
     Card(
         onClick = onClick,
@@ -821,12 +924,136 @@ private fun RoutineCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = elevation)
     ) {
-        Column(modifier = Modifier.padding(12.dp, 10.dp)) {
+        Row(
+            modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // 觸發家族色塊：清單模式也保有顏色分隔
+            Box(
+                modifier = Modifier
+                    .size(14.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(accent.copy(alpha = if (routine.enabled) 1f else 0.4f))
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    routine.name.ifBlank { "(未命名)" },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (routine.enabled) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+                RoutineStatusChips(
+                    routine = routine,
+                    lastLog = lastLog,
+                    sunLocation = sunLocation,
+                    permIssues = permIssues,
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .alpha(if (routine.enabled) 1f else 0.5f)
+                )
+            }
+            if (routine.trigger is Trigger.Manual) {
+                FilledTonalButton(onClick = onRunNow) {
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("執行")
+                }
+            } else {
+                IconButton(onClick = onRunNow) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = "立即執行", tint = accent)
+                }
+                Switch(checked = routine.enabled, onCheckedChange = onToggle)
+            }
+        }
+    }
+}
+
+/** 格狀模式：2 欄方塊卡概覽（色塊 + 名稱 + 一行狀態 + 執行／開關），為概覽故不排序 */
+@Composable
+private fun RoutineGridView(
+    items: List<Routine>,
+    sunLocation: AlarmScheduler.SunLocation?,
+    onEdit: (String) -> Unit,
+    onToggle: (String, Boolean) -> Unit,
+    onRunNow: (Routine) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = modifier,
+        contentPadding = PaddingValues(12.dp, 6.dp, 12.dp, 96.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        gridItems(items, key = { it.id }) { routine ->
+            RoutineGridCell(
+                routine = routine,
+                sunLocation = sunLocation,
+                onClick = { onEdit(routine.id) },
+                onToggle = { onToggle(routine.id, it) },
+                onRunNow = { onRunNow(routine) }
+            )
+        }
+    }
+}
+
+/** 格狀模式的一格方塊卡 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RoutineGridCell(
+    routine: Routine,
+    sunLocation: AlarmScheduler.SunLocation?,
+    onClick: () -> Unit,
+    onToggle: (Boolean) -> Unit,
+    onRunNow: () -> Unit
+) {
+    val accent = triggerColor(routine.trigger)
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(accent.copy(alpha = if (routine.enabled) 1f else 0.4f))
+                )
+                if (routine.trigger is Trigger.Manual) {
+                    IconButton(onClick = onRunNow, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = "執行", tint = accent)
+                    }
+                } else {
+                    Switch(checked = routine.enabled, onCheckedChange = onToggle)
+                }
+            }
+            Spacer(Modifier.weight(1f))
             Text(
                 routine.name.ifBlank { "(未命名)" },
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 color = if (routine.enabled) {
                     MaterialTheme.colorScheme.onSurface
@@ -834,49 +1061,24 @@ private fun RoutineCard(
                     MaterialTheme.colorScheme.onSurfaceVariant
                 }
             )
-
-            // 狀態晶片列（下次執行 / 上次結果 / 需授權）；停用中一併淡化，無線索時不佔空間
-            RoutineStatusChips(
-                routine = routine,
-                lastLog = lastLog,
-                sunLocation = sunLocation,
-                permIssues = permIssues,
-                modifier = Modifier
-                    .padding(top = 6.dp)
-                    .alpha(if (routine.enabled) 1f else 0.5f)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                gridStatusLine(routine, sunLocation),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-
-            Spacer(Modifier.height(8.dp))
-            RoutinePreviewStack(
-                routine = routine,
-                modifier = Modifier.alpha(if (routine.enabled) 1f else 0.4f)
-            )
-
-            Spacer(Modifier.height(6.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (routine.trigger is Trigger.Manual) {
-                    // 手動 routine 沒有可排程的東西 → 隱藏啟用開關，以明確的「執行」為主要操作
-                    FilledTonalButton(onClick = onRunNow) {
-                        Icon(
-                            Icons.Filled.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text("執行")
-                    }
-                } else {
-                    IconButton(onClick = onRunNow) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = "立即執行", tint = accent)
-                    }
-                    Spacer(Modifier.width(4.dp))
-                    Switch(checked = routine.enabled, onCheckedChange = onToggle)
-                }
-            }
         }
     }
+}
+
+/** 格狀卡的一行狀態摘要：手動／已停用／定時給下次時刻，其餘給觸發摘要 */
+private fun gridStatusLine(routine: Routine, sunLocation: AlarmScheduler.SunLocation?): String = when {
+    routine.trigger is Trigger.Manual -> "手動執行"
+    !routine.enabled -> "已停用"
+    routine.trigger is Trigger.Time ->
+        nextRunSummary(routine, sunLocation) ?: triggerSummary(routine.trigger)
+
+    else -> triggerSummary(routine.trigger)
 }
