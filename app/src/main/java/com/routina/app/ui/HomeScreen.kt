@@ -32,6 +32,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -90,6 +91,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -1013,8 +1015,8 @@ private fun RoutineGridView(
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
-    // 拖曳進行中（任一塊被拿起）→ 其餘方塊抖動,讓「排序模式」一目了然
-    var isReordering by remember { mutableStateOf(false) }
+    // 編輯（排序）模式:開始拖曳即進入,其餘方塊持續抖動代表「還在編輯」,點空白處才結束
+    var editMode by remember { mutableStateOf(false) }
     // 本地順序鏡像:拖曳期間即時重排,放開才落地（與清單模式相同）
     var ordered by remember { mutableStateOf(items) }
     LaunchedEffect(items) { ordered = items }
@@ -1028,7 +1030,14 @@ private fun RoutineGridView(
     LazyVerticalGrid(
         state = gridState,
         columns = GridCells.Fixed(2),
-        modifier = modifier,
+        // 編輯模式下,點方塊以外的空白處即結束抖動（點方塊本身仍是進入編輯）
+        modifier = modifier.then(
+            if (editMode) {
+                Modifier.pointerInput(Unit) { detectTapGestures { editMode = false } }
+            } else {
+                Modifier
+            }
+        ),
         contentPadding = PaddingValues(12.dp, 6.dp, 12.dp, 96.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -1039,17 +1048,16 @@ private fun RoutineGridView(
                     routine = routine,
                     sunLocation = sunLocation,
                     // 拿起的那塊放大浮起、其餘方塊抖動
-                    jiggling = isReordering && !isDragging,
+                    jiggling = editMode && !isDragging,
                     dragging = isDragging,
-                    // 長按整塊拿起排序;tap＝進入編輯,兩手勢不衝突
+                    // 長按整塊拿起排序;放開後仍維持抖動(編輯模式),點空白處才結束
                     modifier = Modifier.longPressDraggableHandle(
                         enabled = reorderEnabled,
                         onDragStarted = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            isReordering = true
+                            editMode = true
                         },
                         onDragStopped = {
-                            isReordering = false
                             val fromIdx = items.indexOfFirst { it.id == routine.id }
                             val toIdx = ordered.indexOfFirst { it.id == routine.id }
                             if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx) {
@@ -1098,8 +1106,9 @@ private fun RoutineGridCell(
             wiggle.animateTo(
                 targetValue = if (startNeg) amp else -amp,
                 animationSpec = infiniteRepeatable(
+                    // 頻率較高(每半週期約 70–95ms),抖動更明顯
                     animation = tween(
-                        durationMillis = 120 + routine.id.hashCode().absoluteValue % 40,
+                        durationMillis = 70 + routine.id.hashCode().absoluteValue % 26,
                         easing = LinearEasing
                     ),
                     repeatMode = RepeatMode.Reverse

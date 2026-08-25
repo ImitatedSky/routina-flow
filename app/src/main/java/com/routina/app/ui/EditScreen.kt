@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.ContextWrapper
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -72,6 +73,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
@@ -110,6 +113,8 @@ import com.routina.app.ui.blocks.TriggerBlock
 import com.routina.app.ui.blocks.TriggerPaletteSheet
 import com.routina.app.ui.blocks.TriggerParam
 import com.routina.app.ui.theme.RoutinePalette
+import com.routina.app.ui.theme.blockContentColor
+import com.routina.app.ui.theme.routineAccent
 import kotlinx.serialization.json.Json
 import sh.calvin.reorderable.ReorderableColumn
 import kotlin.math.roundToInt
@@ -211,6 +216,7 @@ fun EditScreen(
     // 刪除／複製／方塊顏色都收於右上「⋯」溢位選單，離開返回鍵的相鄰區，杜絕誤觸
     var showMenu by rememberSaveable { mutableStateOf(false) }
     var showColorPicker by rememberSaveable { mutableStateOf(false) }
+    var showExitConfirm by rememberSaveable { mutableStateOf(false) }
 
     // 拖曳排序拿起 / 讓位時的觸覺回饋
     val haptic = LocalHapticFeedback.current
@@ -290,6 +296,18 @@ fun EditScreen(
         draft.actions.isNotEmpty() &&
         draft.trigger.isConfigured
 
+    // 有沒有「動過但沒存」：既有程序比對內容；新建則看有沒有填名稱 / 加動作
+    val hasUnsavedChanges = if (existing != null) {
+        !draft.contentEquals(existing)
+    } else {
+        draft.name.isNotBlank() || draft.actions.isNotEmpty()
+    }
+    fun requestExit() {
+        if (hasUnsavedChanges) showExitConfirm = true else onDone()
+    }
+    // 系統返回鍵：有未存變更時攔下，先問要不要放棄
+    BackHandler(enabled = hasUnsavedChanges) { showExitConfirm = true }
+
     fun moveAction(from: Int, to: Int) {
         val actions = draft.actions
         if (from !in actions.indices || to !in actions.indices) return
@@ -310,7 +328,7 @@ fun EditScreen(
             TopAppBar(
                 title = { Text(if (existing == null) "新增例行程序" else "編輯例行程序") },
                 navigationIcon = {
-                    IconButton(onClick = onDone) {
+                    IconButton(onClick = { requestExit() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
@@ -380,6 +398,10 @@ fun EditScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
+            RoutinePreview(draft)
+
+            Spacer(Modifier.height(16.dp))
+
             OutlinedTextField(
                 value = draft.name,
                 onValueChange = { draft = draft.copy(name = it) },
@@ -777,6 +799,25 @@ fun EditScreen(
         )
     }
 
+    if (showExitConfirm) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirm = false },
+            title = { Text("尚未儲存") },
+            text = { Text("你有未儲存的變更，直接離開就會遺失。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExitConfirm = false
+                    onDone()
+                }) {
+                    Text("放棄離開", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExitConfirm = false }) { Text("繼續編輯") }
+            }
+        )
+    }
+
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
@@ -797,6 +838,47 @@ fun EditScreen(
         )
     }
 }
+
+/**
+ * 編輯畫面最上方的預覽：用目前（草稿）的顏色顯示這個程序，方便一眼確認方塊顏色改了沒。
+ */
+@Composable
+private fun RoutinePreview(routine: Routine) {
+    val accent = routineAccent(routine)
+    val content = blockContentColor(accent)
+    Column {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(accent)
+                .padding(horizontal = 16.dp, vertical = 16.dp)
+        ) {
+            Text(
+                routine.name.ifBlank { "(未命名)" },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = content,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "目前的方塊顏色。點右上 ⋯ →「方塊顏色」可更換。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** 內容是否相同（忽略 id 與建立時間），用來判斷編輯畫面有沒有未儲存的變更 */
+private fun Routine.contentEquals(other: Routine): Boolean =
+    name == other.name &&
+        enabled == other.enabled &&
+        trigger == other.trigger &&
+        actions == other.actions &&
+        color == other.color
 
 /** 方塊顏色挑選（放在 ⋯ 選單的對話框內）：「依觸發」預設 + 一排預選色，設定 [Routine.color] */
 @OptIn(ExperimentalLayoutApi::class)
