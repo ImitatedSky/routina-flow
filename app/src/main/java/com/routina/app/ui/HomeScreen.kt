@@ -1100,7 +1100,7 @@ private fun RoutineGridCell(
     val wiggle = remember { Animatable(0f) }
     LaunchedEffect(jiggling) {
         if (jiggling) {
-            val amp = 2.2f
+            val amp = 1.8f
             val startNeg = (routine.id.hashCode() and 1) == 0
             wiggle.snapTo(if (startNeg) -amp else amp)
             wiggle.animateTo(
