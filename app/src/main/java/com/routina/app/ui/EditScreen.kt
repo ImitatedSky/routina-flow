@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -207,8 +208,9 @@ fun EditScreen(
     var showNotificationFilter by rememberSaveable { mutableStateOf(false) }
     var showAppPicker by rememberSaveable { mutableStateOf(false) }
     var showDeleteConfirm by rememberSaveable { mutableStateOf(false) }
-    // 刪除收於右上「⋯」溢位選單，離開返回鍵的相鄰區，杜絕誤觸
+    // 刪除／複製／方塊顏色都收於右上「⋯」溢位選單，離開返回鍵的相鄰區，杜絕誤觸
     var showMenu by rememberSaveable { mutableStateOf(false) }
+    var showColorPicker by rememberSaveable { mutableStateOf(false) }
 
     // 拖曳排序拿起 / 讓位時的觸覺回饋
     val haptic = LocalHapticFeedback.current
@@ -313,16 +315,26 @@ fun EditScreen(
                     }
                 },
                 actions = {
-                    // 新建流程（existing == null）沒有可刪對象，不顯示 ⋯ 選單
-                    if (existing != null) {
-                        Box {
-                            IconButton(onClick = { showMenu = true }) {
-                                Icon(Icons.Filled.MoreVert, contentDescription = "更多選項")
-                            }
-                            DropdownMenu(
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false }
-                            ) {
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "更多選項")
+                        }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("方塊顏色") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Palette, contentDescription = null)
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    showColorPicker = true
+                                }
+                            )
+                            // 複製／刪除只在編輯既有程序時有意義（新建還沒有可複製 / 可刪的對象）
+                            if (existing != null) {
                                 DropdownMenuItem(
                                     text = { Text("複製此程序") },
                                     leadingIcon = {
@@ -375,12 +387,6 @@ fun EditScreen(
                 placeholder = { Text("例如：早晨通勤") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(Modifier.height(16.dp))
-            ColorPickerRow(
-                selected = draft.color,
-                onSelect = { draft = draft.copy(color = it) }
             )
 
             Spacer(Modifier.height(20.dp))
@@ -755,6 +761,22 @@ fun EditScreen(
         }
     }
 
+    if (showColorPicker) {
+        AlertDialog(
+            onDismissRequest = { showColorPicker = false },
+            title = { Text("方塊顏色") },
+            text = {
+                ColorPickerRow(
+                    selected = draft.color,
+                    onSelect = { draft = draft.copy(color = it) }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showColorPicker = false }) { Text("完成") }
+            }
+        )
+    }
+
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
@@ -776,27 +798,23 @@ fun EditScreen(
     }
 }
 
-/** 方塊顏色挑選：「依觸發」預設 + 一排預選色（設定 [Routine.color]，格狀／清單方塊即用此色） */
+/** 方塊顏色挑選（放在 ⋯ 選單的對話框內）：「依觸發」預設 + 一排預選色，設定 [Routine.color] */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ColorPickerRow(selected: Int?, onSelect: (Int?) -> Unit) {
-    Column {
-        Text("方塊顏色", style = MaterialTheme.typography.labelLarge)
-        Spacer(Modifier.height(8.dp))
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FilterChip(
-                selected = selected == null,
-                onClick = { onSelect(null) },
-                label = { Text("依觸發") }
-            )
-            RoutinePalette.forEach { c ->
-                val argb = c.toArgb()
-                ColorDot(color = c, selected = selected == argb, onClick = { onSelect(argb) })
-            }
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        FilterChip(
+            selected = selected == null,
+            onClick = { onSelect(null) },
+            label = { Text("依觸發") }
+        )
+        RoutinePalette.forEach { c ->
+            val argb = c.toArgb()
+            ColorDot(color = c, selected = selected == argb, onClick = { onSelect(argb) })
         }
     }
 }

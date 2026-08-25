@@ -24,7 +24,13 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -81,6 +87,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -109,6 +116,7 @@ import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyGridState
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import kotlin.math.absoluteValue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1005,6 +1013,8 @@ private fun RoutineGridView(
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
+    // 拖曳進行中（任一塊被拿起）→ 其餘方塊抖動,讓「排序模式」一目了然
+    var isReordering by remember { mutableStateOf(false) }
     // 本地順序鏡像:拖曳期間即時重排,放開才落地（與清單模式相同）
     var ordered by remember { mutableStateOf(items) }
     LaunchedEffect(items) { ordered = items }
@@ -1024,17 +1034,22 @@ private fun RoutineGridView(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         gridItems(ordered, key = { it.id }) { routine ->
-            ReorderableItem(reorderableState, key = routine.id) { _ ->
+            ReorderableItem(reorderableState, key = routine.id) { isDragging ->
                 RoutineGridCell(
                     routine = routine,
                     sunLocation = sunLocation,
+                    // 拿起的那塊放大浮起、其餘方塊抖動
+                    jiggling = isReordering && !isDragging,
+                    dragging = isDragging,
                     // 長按整塊拿起排序;tap＝進入編輯,兩手勢不衝突
                     modifier = Modifier.longPressDraggableHandle(
                         enabled = reorderEnabled,
                         onDragStarted = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            isReordering = true
                         },
                         onDragStopped = {
+                            isReordering = false
                             val fromIdx = items.indexOfFirst { it.id == routine.id }
                             val toIdx = ordered.indexOfFirst { it.id == routine.id }
                             if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx) {
@@ -1064,20 +1079,52 @@ private fun RoutineGridCell(
     onClick: () -> Unit,
     onToggle: (Boolean) -> Unit,
     onRunNow: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    jiggling: Boolean = false,
+    dragging: Boolean = false
 ) {
     val enabled = routine.enabled
     val accent = routineAccent(routine)
     val container = if (enabled) accent else MaterialTheme.colorScheme.surfaceVariant
     val content = if (enabled) blockContentColor(accent) else MaterialTheme.colorScheme.onSurfaceVariant
+
+    // iOS 式抖動:排序進行中,未被拿起的方塊持續小幅左右擺動（各塊相位/速度稍異,較自然）
+    val wiggle = remember { Animatable(0f) }
+    LaunchedEffect(jiggling) {
+        if (jiggling) {
+            val amp = 2.2f
+            val startNeg = (routine.id.hashCode() and 1) == 0
+            wiggle.snapTo(if (startNeg) -amp else amp)
+            wiggle.animateTo(
+                targetValue = if (startNeg) amp else -amp,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(
+                        durationMillis = 120 + routine.id.hashCode().absoluteValue % 40,
+                        easing = LinearEasing
+                    ),
+                    repeatMode = RepeatMode.Reverse
+                )
+            )
+        } else {
+            wiggle.animateTo(0f, tween(120))
+        }
+    }
+    // 被拿起那塊:放大浮起（不抖）
+    val scale by animateFloatAsState(if (dragging) 1.06f else 1f, label = "gridDragScale")
+
     Card(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .aspectRatio(1f),
+            .aspectRatio(1f)
+            .graphicsLayer {
+                rotationZ = wiggle.value
+                scaleX = scale
+                scaleY = scale
+            },
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = container),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 2.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(14.dp)) {
             Row(
