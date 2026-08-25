@@ -233,6 +233,7 @@ object RoutineExecutor {
         if (!manager.areNotificationsEnabled()) {
             error("未授權通知權限，無法顯示通知")
         }
+        val id = notificationId(routine.id, index)
         val notification = NotificationCompat.Builder(context, RoutinaApp.CHANNEL_ACTIONS)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(action.title.ifBlank { "Routina" })
@@ -240,8 +241,10 @@ object RoutineExecutor {
             .setStyle(NotificationCompat.BigTextStyle().bigText(action.message))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            // 沒有更具體動作的通知,預設點了就打開 Routina,才知道這通知來自哪個程序
+            .setContentIntent(openAppPendingIntent(context, id))
             .build()
-        manager.notify(notificationId(routine.id, index), notification)
+        manager.notify(id, notification)
         return null
     }
 
@@ -1023,6 +1026,23 @@ object RoutineExecutor {
         if (shareToGallery) "已存入公開相簿（其他 App 可讀）" else "已存入 App 私有空間"
 
     // ---------- 共用工具 ----------
+
+    /**
+     * 開啟 Routina App（launcher / MainActivity）的 PendingIntent，
+     * 給沒有更具體點擊動作的通知當預設行為——點了至少會進到 App，不會「點了沒反應」。
+     * 取不到啟動 intent（極少見）時回 null，通知就維持無點擊動作、不崩潰。
+     */
+    private fun openAppPendingIntent(context: Context, requestCode: Int): PendingIntent? {
+        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ?: return null
+        return PendingIntent.getActivity(
+            context,
+            requestCode,
+            launch,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
 
     /** 是否具備「顯示在其他應用程式上層」權限（背景啟動 Activity 的前提） */
     fun canDrawOverlays(context: Context): Boolean =
