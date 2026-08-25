@@ -3,6 +3,7 @@ package com.routina.app.ui.theme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import com.routina.app.model.Action
+import com.routina.app.model.Routine
 import com.routina.app.model.Trigger
 
 /**
@@ -148,6 +149,24 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.Text -> RoutinaColors.ActionText
     is Action.SetVariable -> RoutinaColors.ActionSetVariable
 }
+
+/** 方塊主色：優先用使用者自訂的 [Routine.color]，否則用觸發家族色 */
+fun routineAccent(routine: Routine): Color =
+    routine.color?.let { Color(it) } ?: triggerColor(routine.trigger)
+
+/** 自訂方塊顏色的預選盤（取各功能家族的代表色） */
+val RoutinePalette: List<Color> = listOf(
+    RoutinaColors.TriggerTime,
+    RoutinaColors.TriggerBatteryBelow,
+    RoutinaColors.TriggerBtConnected,
+    RoutinaColors.TriggerLocationEnter,
+    RoutinaColors.ActionNotify,
+    RoutinaColors.ActionVolume,
+    RoutinaColors.ActionFlashlight,
+    RoutinaColors.ActionBurstPhoto,
+    RoutinaColors.ActionText,
+    RoutinaColors.TriggerManual
+)
 
 /**
  * 積木上的文字色：白字與深字之中挑對比較高的那個。

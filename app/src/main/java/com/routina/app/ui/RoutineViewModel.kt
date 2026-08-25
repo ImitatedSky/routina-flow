@@ -39,6 +39,9 @@ class RoutineViewModel(application: Application) : AndroidViewModel(application)
 
     fun delete(id: String) = RoutineManager.delete(getApplication(), id)
 
+    /** 複製一個 routine，回傳新 id（找不到來源時 null） */
+    fun duplicate(id: String): String? = RoutineManager.duplicate(getApplication(), id)
+
     /** 調整首頁清單先後順序（僅顯示順序，即時持久化） */
     fun reorder(from: Int, to: Int) = RoutineManager.reorder(getApplication(), from, to)
 

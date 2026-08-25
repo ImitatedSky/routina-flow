@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -103,9 +104,10 @@ import com.routina.app.model.Trigger
 import com.routina.app.model.isLocation
 import com.routina.app.ui.theme.actionColor
 import com.routina.app.ui.theme.blockContentColor
-import com.routina.app.ui.theme.triggerColor
+import com.routina.app.ui.theme.routineAccent
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyGridState
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -446,8 +448,8 @@ fun HomeScreen(
                 )
 
                 val trimmed = query.trim()
-                // 拖曳排序只在「清單」模式且未搜尋時可用（格狀為概覽、過濾清單排序無意義）
-                val reorderEnabled = trimmed.isEmpty() && viewMode == HomeViewMode.LIST
+                // 清單與格狀都可長按拖曳排序；只有搜尋（過濾）時停用——過濾清單上排序無意義
+                val reorderEnabled = trimmed.isEmpty()
 
                 val filtered = if (trimmed.isEmpty()) {
                     routines
@@ -513,6 +515,8 @@ fun HomeScreen(
                     HomeViewMode.GRID -> RoutineGridView(
                         items = filtered,
                         sunLocation = sunLocation,
+                        reorderEnabled = reorderEnabled,
+                        onReorderCommit = { from, to -> viewModel.reorder(from, to) },
                         onEdit = onEdit,
                         onToggle = { id, enabled -> viewModel.setEnabled(id, enabled) },
                         onRunNow = runNow,
@@ -923,7 +927,7 @@ private fun RoutineListRow(
     onToggle: (Boolean) -> Unit,
     onRunNow: () -> Unit
 ) {
-    val accent = triggerColor(routine.trigger)
+    val accent = routineAccent(routine)
     val elevation by animateDpAsState(if (isDragging) 8.dp else 2.dp, label = "listRowElevation")
 
     Card(
@@ -993,26 +997,56 @@ private fun RoutineListRow(
 private fun RoutineGridView(
     items: List<Routine>,
     sunLocation: AlarmScheduler.SunLocation?,
+    reorderEnabled: Boolean,
+    onReorderCommit: (Int, Int) -> Unit,
     onEdit: (String) -> Unit,
     onToggle: (String, Boolean) -> Unit,
     onRunNow: (Routine) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptic = LocalHapticFeedback.current
+    // 本地順序鏡像:拖曳期間即時重排,放開才落地（與清單模式相同）
+    var ordered by remember { mutableStateOf(items) }
+    LaunchedEffect(items) { ordered = items }
+
+    val gridState = rememberLazyGridState()
+    val reorderableState = rememberReorderableLazyGridState(gridState) { from, to ->
+        ordered = ordered.toMutableList().apply { add(to.index, removeAt(from.index)) }
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
+
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Fixed(2),
         modifier = modifier,
         contentPadding = PaddingValues(12.dp, 6.dp, 12.dp, 96.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        gridItems(items, key = { it.id }) { routine ->
-            RoutineGridCell(
-                routine = routine,
-                sunLocation = sunLocation,
-                onClick = { onEdit(routine.id) },
-                onToggle = { onToggle(routine.id, it) },
-                onRunNow = { onRunNow(routine) }
-            )
+        gridItems(ordered, key = { it.id }) { routine ->
+            ReorderableItem(reorderableState, key = routine.id) { _ ->
+                RoutineGridCell(
+                    routine = routine,
+                    sunLocation = sunLocation,
+                    // 長按整塊拿起排序;tap＝進入編輯,兩手勢不衝突
+                    modifier = Modifier.longPressDraggableHandle(
+                        enabled = reorderEnabled,
+                        onDragStarted = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        },
+                        onDragStopped = {
+                            val fromIdx = items.indexOfFirst { it.id == routine.id }
+                            val toIdx = ordered.indexOfFirst { it.id == routine.id }
+                            if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx) {
+                                onReorderCommit(fromIdx, toIdx)
+                            }
+                        }
+                    ),
+                    onClick = { onEdit(routine.id) },
+                    onToggle = { onToggle(routine.id, it) },
+                    onRunNow = { onRunNow(routine) }
+                )
+            }
         }
     }
 }
@@ -1029,15 +1063,16 @@ private fun RoutineGridCell(
     sunLocation: AlarmScheduler.SunLocation?,
     onClick: () -> Unit,
     onToggle: (Boolean) -> Unit,
-    onRunNow: () -> Unit
+    onRunNow: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val enabled = routine.enabled
-    val accent = triggerColor(routine.trigger)
+    val accent = routineAccent(routine)
     val container = if (enabled) accent else MaterialTheme.colorScheme.surfaceVariant
     val content = if (enabled) blockContentColor(accent) else MaterialTheme.colorScheme.onSurfaceVariant
     Card(
         onClick = onClick,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .aspectRatio(1f),
         shape = RoundedCornerShape(20.dp),

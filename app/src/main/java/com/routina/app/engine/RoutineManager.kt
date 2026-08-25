@@ -43,6 +43,23 @@ object RoutineManager {
         RoutineRepository.get(context.applicationContext).reorder(from, to)
     }
 
+    /**
+     * 複製一個 routine：產生新 id、名稱加「複製」、**預設停用**（避免與原本同時自動觸發），
+     * 觸發／動作／顏色照抄。回傳新 id；找不到來源時回 null。
+     */
+    fun duplicate(context: Context, routineId: String): String? {
+        val appContext = context.applicationContext
+        val original = RoutineRepository.get(appContext).findById(routineId) ?: return null
+        val copy = original.copy(
+            id = java.util.UUID.randomUUID().toString(),
+            name = original.name + " 複製",
+            enabled = false,
+            createdAt = System.currentTimeMillis()
+        )
+        save(appContext, copy)
+        return copy.id
+    }
+
     fun delete(context: Context, routineId: String) {
         val appContext = context.applicationContext
         AlarmScheduler.cancel(appContext, routineId)

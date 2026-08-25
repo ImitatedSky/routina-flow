@@ -616,6 +616,8 @@ data class Routine(
     val enabled: Boolean = true,
     val trigger: Trigger = Trigger.Time(),
     val actions: List<Action> = emptyList(),
+    /** 自訂方塊顏色（ARGB）；null＝依觸發家族色（舊資料相容） */
+    val color: Int? = null,
     val createdAt: Long = System.currentTimeMillis()
 ) {
     /** AlarmManager PendingIntent 的 requestCode：由 id 推導，穩定且不衝突。 */

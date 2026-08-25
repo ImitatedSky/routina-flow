@@ -9,6 +9,8 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,13 +24,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
@@ -63,6 +69,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
@@ -100,6 +108,7 @@ import com.routina.app.ui.blocks.InsertPoint
 import com.routina.app.ui.blocks.TriggerBlock
 import com.routina.app.ui.blocks.TriggerPaletteSheet
 import com.routina.app.ui.blocks.TriggerParam
+import com.routina.app.ui.theme.RoutinePalette
 import kotlinx.serialization.json.Json
 import sh.calvin.reorderable.ReorderableColumn
 import kotlin.math.roundToInt
@@ -315,6 +324,18 @@ fun EditScreen(
                                 onDismissRequest = { showMenu = false }
                             ) {
                                 DropdownMenuItem(
+                                    text = { Text("複製此程序") },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.ContentCopy, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        // 複製已存的版本(新 id、名稱加「複製」、預設停用),回首頁
+                                        viewModel.duplicate(draft.id)
+                                        onDone()
+                                    }
+                                )
+                                DropdownMenuItem(
                                     text = {
                                         Text(
                                             "刪除例行程序",
@@ -354,6 +375,12 @@ fun EditScreen(
                 placeholder = { Text("例如：早晨通勤") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(Modifier.height(16.dp))
+            ColorPickerRow(
+                selected = draft.color,
+                onSelect = { draft = draft.copy(color = it) }
             )
 
             Spacer(Modifier.height(20.dp))
@@ -746,6 +773,60 @@ fun EditScreen(
                 TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
             }
         )
+    }
+}
+
+/** 方塊顏色挑選：「依觸發」預設 + 一排預選色（設定 [Routine.color]，格狀／清單方塊即用此色） */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ColorPickerRow(selected: Int?, onSelect: (Int?) -> Unit) {
+    Column {
+        Text("方塊顏色", style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(8.dp))
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = selected == null,
+                onClick = { onSelect(null) },
+                label = { Text("依觸發") }
+            )
+            RoutinePalette.forEach { c ->
+                val argb = c.toArgb()
+                ColorDot(color = c, selected = selected == argb, onClick = { onSelect(argb) })
+            }
+        }
+    }
+}
+
+/** 一顆可點的顏色圓點；選中時加深色外框 + 白色勾 */
+@Composable
+private fun ColorDot(color: Color, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(color)
+            .then(
+                if (selected) {
+                    Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                } else {
+                    Modifier
+                }
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        if (selected) {
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = "已選",
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 
