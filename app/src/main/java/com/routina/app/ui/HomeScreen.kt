@@ -1106,9 +1106,9 @@ private fun RoutineGridCell(
             wiggle.animateTo(
                 targetValue = if (startNeg) amp else -amp,
                 animationSpec = infiniteRepeatable(
-                    // 每半週期約 60–65ms
+                    // 每半週期約 50–55ms
                     animation = tween(
-                        durationMillis = 60 + routine.id.hashCode().absoluteValue % 6,
+                        durationMillis = 50 + routine.id.hashCode().absoluteValue % 6,
                         easing = LinearEasing
                     ),
                     repeatMode = RepeatMode.Reverse
