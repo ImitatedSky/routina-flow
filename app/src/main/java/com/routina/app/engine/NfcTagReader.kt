@@ -8,8 +8,10 @@ import android.nfc.NdefMessage
 import android.nfc.NdefRecord
 import android.nfc.NfcAdapter
 import android.nfc.Tag
+import android.nfc.tech.MifareClassic
 import android.nfc.tech.Ndef
 import android.nfc.tech.NdefFormatable
+import android.nfc.tech.NfcA
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -119,6 +121,22 @@ object NfcTagReader {
         }
     }
 
+    /**
+     * 開啟「卡片探測」模式（實驗性）：讀一張卡的技術特徵並判讀能否複製，結果以 [CardInfo]
+     * 回呼（保證在主執行緒）。用 [BASE_READER_FLAGS]（**不**跳過 NDEF 檢查，才認得出 NDEF 標籤）。
+     *
+     * 只做「讀取／辨識」，不能讓手機模擬（變成）這張卡——那需要安全元件(SE)，只有 OEM 錢包
+     * App 拿得到。
+     *
+     * @return 是否成功啟用
+     */
+    fun enableInspectMode(activity: Activity, onResult: (CardInfo) -> Unit): Boolean =
+        enable(activity, BASE_READER_FLAGS) { tag ->
+            // 回呼來自 binder 執行緒——MIFARE 驗證是 I/O，就在這裡做完，只把結果 post 回主執行緒
+            val info = readInfo(tag)
+            onMain { onResult(info) }
+        }
+
     fun disableReaderMode(activity: Activity) {
         runCatching { adapter(activity)?.disableReaderMode(activity) }
     }
@@ -183,6 +201,25 @@ object NfcTagReader {
     data class ReadResult(val uid: String?, val ndefBase64: String, val summary: String)
 
     /**
+     * 一次卡片探測的結果：把一張卡的技術特徵與「能不能複製」的誠實判讀整理在一起。
+     *
+     * null 代表該欄位對這張卡不適用或讀不到（例如非 MIFARE Classic 卡沒有 [sectorCount]）。
+     * [verdict] 是給人看的判讀文字（見 [buildVerdict]）。
+     */
+    data class CardInfo(
+        val uid: String?,
+        val techList: List<String>,
+        val atqa: String?,
+        val sak: String?,
+        val mifareType: String?,
+        val sectorCount: Int?,
+        val readableSectors: Int?,
+        val hasIsoDep: Boolean,
+        val hasNdef: Boolean,
+        val verdict: String
+    )
+
+    /**
      * 讀 UID 加整份 NDEF 內容。所有標籤 I/O 都包在 runCatching 內：
      * 讀到一半移開標籤只會得到一個空內容的結果，不會讓 App 崩潰。
      */
@@ -207,6 +244,162 @@ object NfcTagReader {
             ReadResult(uid = uid, ndefBase64 = "", summary = "")
         }
     }
+
+    /**
+     * 讀出卡片的技術特徵：UID、tech 清單、ATQA/SAK、MIFARE 類型與可用預設金鑰讀到的磁區數，
+     * 最後給一段誠實的判讀。所有卡片 I/O 都包在 runCatching 內：讀到一半移開卡片不會讓 App 崩潰。
+     */
+    private fun readInfo(tag: Tag): CardInfo {
+        val uid = uidOf(tag)
+        val techList = tag.techList.map { it.substringAfterLast('.') } // 例：NfcA、MifareClassic、IsoDep、Ndef
+        val hasIsoDep = "IsoDep" in techList
+        val hasNdef = "Ndef" in techList
+
+        // ATQA／SAK 不用 connect 就拿得到（NfcA 的 low-level 屬性），不佔用連線
+        var atqa: String? = null
+        var sak: String? = null
+        if ("NfcA" in techList) {
+            runCatching {
+                NfcA.get(tag)?.let {
+                    atqa = bytesToHex(it.atqa)
+                    sak = "%02X".format(it.sak)
+                }
+            }
+        }
+
+        var mifareType: String? = null
+        var sectorCount: Int? = null
+        var readableSectors: Int? = null
+        if ("MifareClassic" in techList) {
+            val mc = runCatching { MifareClassic.get(tag) }.getOrNull()
+            if (mc != null) {
+                mifareType = when (mc.type) {
+                    MifareClassic.TYPE_CLASSIC -> "MIFARE Classic"
+                    MifareClassic.TYPE_PLUS -> "MIFARE Plus"
+                    MifareClassic.TYPE_PRO -> "MIFARE Pro"
+                    else -> "未知"
+                }
+                sectorCount = mc.sectorCount
+                // connect + 逐磁區試預設金鑰都包在 runCatching：移開卡片只會拿到 null，不崩潰
+                readableSectors = runCatching {
+                    mc.connect()
+                    try {
+                        countReadableSectors(mc)
+                    } finally {
+                        runCatching { mc.close() }
+                    }
+                }.getOrNull()
+            }
+        }
+
+        val verdict = buildVerdict(
+            mifarePresent = mifareType != null,
+            sectorCount = sectorCount,
+            readableSectors = readableSectors,
+            hasIsoDep = hasIsoDep,
+            hasNdef = hasNdef
+        )
+
+        return CardInfo(
+            uid = uid,
+            techList = techList,
+            atqa = atqa,
+            sak = sak,
+            mifareType = mifareType,
+            sectorCount = sectorCount,
+            readableSectors = readableSectors,
+            hasIsoDep = hasIsoDep,
+            hasNdef = hasNdef,
+            verdict = verdict
+        )
+    }
+
+    /** 逐磁區用預設金鑰清單試 KeyA／KeyB，回傳任一把金鑰能驗證成功的磁區數 */
+    private fun countReadableSectors(mc: MifareClassic): Int {
+        var readable = 0
+        for (s in 0 until mc.sectorCount) {
+            val ok = DEFAULT_KEYS.any { key ->
+                runCatching { mc.authenticateSectorWithKeyA(s, key) }.getOrDefault(false) ||
+                    runCatching { mc.authenticateSectorWithKeyB(s, key) }.getOrDefault(false)
+            }
+            if (ok) readable++
+        }
+        return readable
+    }
+
+    /**
+     * 依技術特徵給一段誠實的「能不能複製」判讀。
+     * 永遠附上安全元件(SE)的但書：手機通常無法把門禁卡變成手機刷。
+     */
+    private fun buildVerdict(
+        mifarePresent: Boolean,
+        sectorCount: Int?,
+        readableSectors: Int?,
+        hasIsoDep: Boolean,
+        hasNdef: Boolean
+    ): String {
+        val body = when {
+            mifarePresent -> {
+                val sectors = sectorCount ?: 0
+                val readable = readableSectors ?: 0
+                when {
+                    sectors > 0 && readable == sectors ->
+                        "MIFARE Classic:所有磁區都能用預設金鑰讀取＝弱加密。可用 magic UID 白卡 + " +
+                            "MIFARE Classic Tool 複製到實體卡,或部分國行手機的內建門卡功能。" +
+                            "但第三方 App 無法讓手機直接變成這張卡。"
+
+                    readable in 1 until sectors ->
+                        "MIFARE Classic:部分磁區可讀、部分是自訂金鑰。" +
+                            "要完整複製需要那些金鑰(手機一般拿不到)。"
+
+                    else ->
+                        "MIFARE Classic:所有磁區都是自訂金鑰,讀不到,無法複製(除非有金鑰)。"
+                }
+            }
+
+            hasIsoDep ->
+                "疑似 DESFire / 其他加密卡(ISO-DEP):強加密,手機與一般工具都無法複製。"
+
+            hasNdef ->
+                "NDEF 資料標籤:內容可用『NFC 標籤庫 → 寫到新標籤』複製到另一張標籤" +
+                    "(但門禁多半不是這種)。"
+
+            else ->
+                "只認 UID 的簡單卡或未知類型:UID 無法寫到一般卡,需 magic UID 白卡才能複製 UID;" +
+                    "手機也無法模擬任意 UID。"
+        }
+        return body + "\n\n註:除了小米/華為等國行手機的內建門卡功能,手機通常無法把門禁卡變成手機刷" +
+            "——這是安全元件(SE)的硬體限制,不是 App 做不做得到的問題。"
+    }
+
+    /** 位元組陣列轉大寫 hex 字串（無分隔）；空陣列回 null */
+    private fun bytesToHex(bytes: ByteArray?): String? {
+        if (bytes == null || bytes.isEmpty()) return null
+        return bytes.joinToString("") { "%02X".format(it) }
+    }
+
+    /** 把偶數長度的 hex 字串轉成位元組陣列（給預設金鑰清單用） */
+    private fun hexToBytes(hex: String): ByteArray {
+        val out = ByteArray(hex.length / 2)
+        for (i in out.indices) {
+            out[i] = hex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+        }
+        return out
+    }
+
+    /** MIFARE Classic 常見的出廠／通用預設金鑰；能用這些讀到＝弱加密 */
+    private val DEFAULT_KEYS: List<ByteArray> = listOf(
+        MifareClassic.KEY_DEFAULT,
+        MifareClassic.KEY_MIFARE_APPLICATION_DIRECTORY,
+        MifareClassic.KEY_NFC_FORUM,
+        hexToBytes("000000000000"),
+        hexToBytes("A0B0C0D0E0F0"),
+        hexToBytes("B0B1B2B3B4B5"),
+        hexToBytes("4D3A99C351DD"),
+        hexToBytes("1A982C7E459A"),
+        hexToBytes("D3F7D3F7D3F7"),
+        hexToBytes("AABBCCDDEEFF")
+    )
 
     /** 把 NDEF 內容整理成給人看的摘要（網址／文字／MIME 類型…） */
     private fun summarizeNdef(msg: NdefMessage): String {

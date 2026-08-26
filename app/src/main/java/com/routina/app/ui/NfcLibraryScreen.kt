@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -32,6 +33,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -75,6 +77,7 @@ fun NfcLibraryScreen(
     var nfcEnabled by remember { mutableStateOf(viewModel.isNfcEnabled()) }
 
     var showScanAdd by remember { mutableStateOf(false) }
+    var showInspect by remember { mutableStateOf(false) }
     var writeTarget by remember { mutableStateOf<NfcRecord?>(null) }
     var renameTarget by remember { mutableStateOf<NfcRecord?>(null) }
     var deleteTarget by remember { mutableStateOf<NfcRecord?>(null) }
@@ -97,6 +100,12 @@ fun NfcLibraryScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    // 沒有 NFC 硬體時探測不可用
+                    IconButton(onClick = { showInspect = true }, enabled = nfcAvailable) {
+                        Icon(Icons.Filled.Search, contentDescription = "卡片探測")
                     }
                 }
             )
@@ -171,6 +180,10 @@ fun NfcLibraryScreen(
             },
             onDismiss = { showScanAdd = false }
         )
+    }
+
+    if (showInspect) {
+        NfcInspectDialog(onDismiss = { showInspect = false })
     }
 
     writeTarget?.let { record ->
@@ -407,6 +420,122 @@ private fun NfcScanAddDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
+}
+
+/**
+ * 卡片探測（實驗性）：對話框開著的期間啟用探測模式，讀到卡片就顯示它的技術特徵
+ * 與一段誠實的「能不能複製」判讀。
+ *
+ * 這只做讀取／辨識，**不能**讓手機模擬（變成）這張卡——那需要安全元件(SE)，
+ * 只有 OEM 錢包 App 拿得到。reader mode 只在對話框存在時啟用（[NfcReaderModeEffect] 收尾即解除）。
+ */
+@Composable
+private fun NfcInspectDialog(
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
+    val available = remember(context) { NfcTagReader.isAvailable(context) }
+    var enabled by remember { mutableStateOf(NfcTagReader.isEnabled(context)) }
+    var info by remember { mutableStateOf<NfcTagReader.CardInfo?>(null) }
+
+    // reader mode 註冊一次就好，回呼透過 rememberUpdatedState 看到最新的 setter
+    val handleInfo by rememberUpdatedState(
+        newValue = { c: NfcTagReader.CardInfo -> info = c }
+    )
+
+    NfcReaderModeEffect(
+        activity = activity,
+        active = info == null,
+        onNfcEnabledChange = { enabled = it }
+    ) { NfcTagReader.enableInspectMode(it) { c -> handleInfo(c) } }
+
+    val current = info
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("卡片探測") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                when {
+                    !available || activity == null -> Text(
+                        "這台裝置沒有 NFC 硬體，無法探測卡片。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+
+                    !enabled -> {
+                        Text(
+                            "NFC 目前是關閉的，開啟後才能探測卡片。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        TextButton(onClick = { context.openNfcSettings() }) {
+                            Text("前往 NFC 設定")
+                        }
+                    }
+
+                    current == null -> Text(
+                        "把要探測的卡片(例如員工證)靠到手機背面(多數機型在鏡頭附近)，讀到就會顯示結果。",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    else -> {
+                        Text(
+                            "UID：${current.uid ?: "（讀不到）"}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "技術：${current.techList.joinToString(", ").ifBlank { "（無）" }}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (current.atqa != null || current.sak != null) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "ATQA：${current.atqa ?: "—"}　SAK：${current.sak ?: "—"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (current.mifareType != null) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "MIFARE 類型：${current.mifareType}　" +
+                                    "可讀磁區 ${current.readableSectors ?: 0} / ${current.sectorCount ?: 0}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        // 判讀用色塊背景 + 圓角強調，誠實說明能不能複製
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                current.verdict,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("完成") }
+        },
+        dismissButton = if (current != null) {
+            { TextButton(onClick = { info = null }) { Text("再探測一張") } }
+        } else {
+            null
         }
     )
 }
