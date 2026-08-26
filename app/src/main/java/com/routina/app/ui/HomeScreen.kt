@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
@@ -127,7 +128,8 @@ fun HomeScreen(
     onCreate: () -> Unit,
     onCreateFromTemplate: (String) -> Unit,
     onEdit: (String) -> Unit,
-    onOpenLogs: () -> Unit
+    onOpenLogs: () -> Unit,
+    onOpenNfc: () -> Unit
 ) {
     val context = LocalContext.current
     val routines by viewModel.routines.collectAsState()
@@ -288,6 +290,9 @@ fun HomeScreen(
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             }
                         )
+                    }
+                    IconButton(onClick = onOpenNfc) {
+                        Icon(Icons.Filled.Nfc, contentDescription = "NFC 標籤庫")
                     }
                     IconButton(onClick = onOpenLogs) {
                         Icon(Icons.Filled.History, contentDescription = "執行紀錄")

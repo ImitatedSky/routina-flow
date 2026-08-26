@@ -13,7 +13,9 @@ import android.nfc.tech.NdefFormatable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Base64
 import java.io.IOException
+import java.nio.charset.Charset
 
 /**
  * NFC 標籤的共用讀取與寫入邏輯。
@@ -84,6 +86,39 @@ object NfcTagReader {
             onMain { onResult(outcome) }
         }
 
+    /**
+     * 開啟「完整讀取」模式（NFC 標籤庫登錄用）：讀 UID 加整份 NDEF 內容，結果以
+     * [ReadResult] 回呼（保證在主執行緒）。與登錄觸發只要 UID 不同，這裡**不能**跳過
+     * NDEF 檢查（用 [WRITE_FLAGS]），否則 [Ndef.get] 拿不到 NDEF。
+     *
+     * @return 是否成功啟用
+     */
+    fun enableReadFullMode(activity: Activity, onRead: (ReadResult) -> Unit): Boolean =
+        enable(activity, WRITE_FLAGS) { tag ->
+            // 標籤 I/O 不能在主執行緒，就在 binder 執行緒讀完，只把結果 post 回主執行緒
+            val result = readTag(tag)
+            onMain { onRead(result) }
+        }
+
+    /**
+     * 開啟寫入模式：把記錄的 NDEF 內容（[ndefBase64]）原樣寫進另一張可寫標籤（＝複製資料）。
+     * 結果以 [WriteOutcome] 回呼（保證在主執行緒）。與 [enableReaderMode] 一樣綁在對話框的
+     * 生命週期上，同一個 Activity 同時只能有一種 reader mode。
+     *
+     * @return 是否成功啟用
+     */
+    fun enableWriteNdefMode(
+        activity: Activity,
+        ndefBase64: String,
+        onResult: (WriteOutcome) -> Unit
+    ): Boolean {
+        val bytes = runCatching { Base64.decode(ndefBase64, Base64.NO_WRAP) }.getOrNull()
+        return enable(activity, WRITE_FLAGS) { tag ->
+            val outcome = writeTagMessage(tag, bytes)
+            onMain { onResult(outcome) }
+        }
+    }
+
     fun disableReaderMode(activity: Activity) {
         runCatching { adapter(activity)?.disableReaderMode(activity) }
     }
@@ -141,6 +176,67 @@ object NfcTagReader {
     }
 
     /**
+     * 一次完整讀取的結果（NFC 標籤庫登錄用）。
+     *
+     * [uid] 讀不到時為 null；[ndefBase64] 與 [summary] 在標籤沒有 NDEF 內容時皆為空字串。
+     */
+    data class ReadResult(val uid: String?, val ndefBase64: String, val summary: String)
+
+    /**
+     * 讀 UID 加整份 NDEF 內容。所有標籤 I/O 都包在 runCatching 內：
+     * 讀到一半移開標籤只會得到一個空內容的結果，不會讓 App 崩潰。
+     */
+    private fun readTag(tag: Tag): ReadResult {
+        val uid = uidOf(tag)
+        val msg = runCatching {
+            val ndef = Ndef.get(tag) ?: return@runCatching null
+            try {
+                ndef.connect()
+                ndef.ndefMessage
+            } finally {
+                runCatching { ndef.close() }
+            }
+        }.getOrNull()
+        return if (msg != null) {
+            ReadResult(
+                uid = uid,
+                ndefBase64 = Base64.encodeToString(msg.toByteArray(), Base64.NO_WRAP),
+                summary = summarizeNdef(msg)
+            )
+        } else {
+            ReadResult(uid = uid, ndefBase64 = "", summary = "")
+        }
+    }
+
+    /** 把 NDEF 內容整理成給人看的摘要（網址／文字／MIME 類型…） */
+    private fun summarizeNdef(msg: NdefMessage): String {
+        val parts = msg.records.mapNotNull { record ->
+            val uri = runCatching { record.toUri() }.getOrNull()
+            when {
+                uri != null -> uri.toString()
+                record.tnf == NdefRecord.TNF_WELL_KNOWN &&
+                    record.type.contentEquals(NdefRecord.RTD_TEXT) -> decodeText(record.payload)
+
+                record.tnf == NdefRecord.TNF_MIME_MEDIA ->
+                    runCatching { record.toMimeType() }.getOrNull()
+
+                else -> null
+            }?.takeIf { it.isNotBlank() }
+        }
+        val joined = parts.joinToString(" · ").take(160)
+        return joined.ifBlank { "（無法辨識的內容或空白標籤）" }
+    }
+
+    /** 解碼 RTD_TEXT 的 payload：首位是狀態位元組，低 6 位為語言碼長度，最高位決定編碼 */
+    private fun decodeText(payload: ByteArray): String? = runCatching {
+        if (payload.isEmpty()) return@runCatching null
+        val status = payload[0].toInt()
+        val langLength = status and 0x3F
+        val charset: Charset = if (status and 0x80 != 0) Charsets.UTF_16 else Charsets.UTF_8
+        String(payload, 1 + langLength, payload.size - 1 - langLength, charset)
+    }.getOrNull()
+
+    /**
      * 把 `routina://tag/{uid}` 的 NDEF URI 寫進標籤。
      *
      * 已格式化的標籤走 [Ndef]（檢查可寫與容量），未格式化但支援的標籤走
@@ -153,6 +249,25 @@ object NfcTagReader {
         val message = runCatching {
             NdefMessage(NdefRecord.createUri(tagUri(uid)))
         }.getOrNull() ?: return WriteOutcome(uid, ERROR_GENERIC)
+
+        val ndef = runCatching { Ndef.get(tag) }.getOrNull()
+        if (ndef != null) return WriteOutcome(uid, writeNdef(ndef, message))
+
+        val formatable = runCatching { NdefFormatable.get(tag) }.getOrNull()
+        if (formatable != null) return WriteOutcome(uid, formatNdef(formatable, message))
+
+        return WriteOutcome(uid, ERROR_UNSUPPORTED)
+    }
+
+    /**
+     * 把記錄的 NDEF 內容（已解碼的位元組）原樣寫進另一張標籤（＝複製資料）。
+     * 結構同 [writeTagUri]，差別只在訊息來自記錄而非新建的專屬 URI。
+     */
+    private fun writeTagMessage(tag: Tag, bytes: ByteArray?): WriteOutcome {
+        val uid = uidOf(tag)
+        if (bytes == null || bytes.isEmpty()) return WriteOutcome(uid, ERROR_NO_CONTENT)
+        val message = runCatching { NdefMessage(bytes) }.getOrNull()
+            ?: return WriteOutcome(uid, ERROR_GENERIC)
 
         val ndef = runCatching { Ndef.get(tag) }.getOrNull()
         if (ndef != null) return WriteOutcome(uid, writeNdef(ndef, message))
@@ -230,4 +345,5 @@ object NfcTagReader {
     private const val ERROR_UNSUPPORTED = "此標籤不支援寫入"
     private const val ERROR_MOVED = "請保持標籤貼緊再試一次"
     private const val ERROR_GENERIC = "無法建立寫入內容"
+    private const val ERROR_NO_CONTENT = "這張記錄沒有可寫入的 NDEF 內容"
 }

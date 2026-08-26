@@ -13,6 +13,7 @@ import com.routina.app.engine.NfcTagReader
 import com.routina.app.engine.RoutinaNotificationListener
 import com.routina.app.engine.RoutineExecutor
 import com.routina.app.engine.RoutineManager
+import com.routina.app.model.NfcRecord
 import com.routina.app.model.Routine
 import com.routina.app.model.RunLog
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +25,7 @@ class RoutineViewModel(application: Application) : AndroidViewModel(application)
 
     val routines: StateFlow<List<Routine>> = repository.routines
     val logs: StateFlow<List<RunLog>> = repository.logs
+    val nfcRecords: StateFlow<List<NfcRecord>> = repository.nfcTags
 
     init {
         // App 啟動時對齊排程與監測服務（例如使用者曾強制停止 App）
@@ -56,6 +58,13 @@ class RoutineViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun clearLogs() = repository.clearLogs()
+
+    /** NFC 標籤庫的一筆記錄（找不到時 null） */
+    fun findNfcRecord(id: String): NfcRecord? = repository.nfcTags.value.firstOrNull { it.id == id }
+
+    fun saveNfcRecord(record: NfcRecord) = repository.upsertNfc(record)
+
+    fun deleteNfcRecord(id: String) = repository.deleteNfc(id)
 
     /** 是否具備精確鬧鐘權限（Android 12+），否則 UI 顯示降級提示 */
     fun canScheduleExactAlarms(): Boolean =

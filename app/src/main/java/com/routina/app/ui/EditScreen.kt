@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Activity
 import android.bluetooth.BluetoothManager
 import android.content.Context
-import android.content.ContextWrapper
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -179,6 +178,8 @@ fun EditScreen(
     viewModel: RoutineViewModel,
     routineId: String?,
     templateId: String? = null,
+    nfcUid: String? = null,
+    nfcName: String? = null,
     onDone: () -> Unit
 ) {
     val existing = remember(routineId) { routineId?.let { viewModel.findById(it) } }
@@ -187,9 +188,16 @@ fun EditScreen(
     // 旋轉螢幕等設定變更不會重生一份新 id。
     var draft by rememberSaveable(stateSaver = RoutineSaver) {
         mutableStateOf(
-            // 空白新建（無 existing、無範本）預設為手動執行——想做純捷徑時零負擔
+            // 空白新建（無 existing、無範本）預設為手動執行——想做純捷徑時零負擔；
+            // 從 NFC 標籤庫「設為觸發」進來則預先填好該標籤的 NFC 觸發
             existing
                 ?: templateId?.let { RoutineTemplates.byId(it)?.build() }
+                ?: nfcUid?.let {
+                    Routine(
+                        name = nfcName.orEmpty(),
+                        trigger = Trigger.NfcTag(uid = it, label = nfcName.orEmpty())
+                    )
+                }
                 ?: Routine(trigger = Trigger.Manual)
         )
     }
@@ -1481,53 +1489,6 @@ private fun NfcWriteDialog(
     )
 }
 
-/**
- * 把 NFC reader mode 綁在 Activity 的 resumed 狀態上（系統要求），並回報 NFC 開關狀態。
- *
- * 去 NFC 設定頁再回來要重新啟用，離開畫面就解除；觀察者加入時會補送目前狀態的事件，
- * 因此對話框一開就會啟用一次。
- *
- * 同一個 Activity 同時只能有一種 reader mode（後啟用的會取代前一個），
- * 所以掃描與寫入對話框以 [active] 互相讓位——關掉的那一邊會先解除，
- * 接手的那一邊才啟用。
- *
- * @param enable 實際要啟用的模式（掃描或寫入）
- */
-@Composable
-private fun NfcReaderModeEffect(
-    activity: Activity?,
-    active: Boolean,
-    onNfcEnabledChange: (Boolean) -> Unit,
-    enable: (Activity) -> Unit
-) {
-    val context = LocalContext.current
-    val currentEnable by rememberUpdatedState(enable)
-    val currentOnChange by rememberUpdatedState(onNfcEnabledChange)
-
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, activity, active) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_RESUME -> {
-                    val nfcOn = NfcTagReader.isEnabled(context)
-                    currentOnChange(nfcOn)
-                    if (activity != null && active && nfcOn) currentEnable(activity)
-                }
-
-                Lifecycle.Event.ON_PAUSE ->
-                    activity?.let { NfcTagReader.disableReaderMode(it) }
-
-                else -> Unit
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            activity?.let { NfcTagReader.disableReaderMode(it) }
-        }
-    }
-}
-
 /** 通知觸發的來源 App（可選「任一 App」）與關鍵字 */
 @Composable
 private fun NotificationFilterDialog(
@@ -1593,13 +1554,6 @@ private fun saveHint(trigger: Trigger): String = when {
     trigger is Trigger.NfcTag -> "請輸入名稱、掃描一張 NFC 標籤，並至少加入一個動作。"
     trigger is Trigger.AppState -> "請輸入名稱、選擇一個 App，並至少加入一個動作。"
     else -> "請輸入名稱、在地圖上選好區域，並至少加入一個動作。"
-}
-
-/** 從 Compose 的 Context 找出宿主 Activity（NFC reader mode 必須綁定 Activity） */
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
 }
 
 /** 系統狀態切換：開啟時 / 關閉時 */

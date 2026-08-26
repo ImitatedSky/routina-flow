@@ -624,6 +624,22 @@ data class Routine(
     val alarmRequestCode: Int get() = id.hashCode()
 }
 
+/**
+ * NFC 標籤庫的一筆記錄：掃描時把 UID 與 NDEF 內容存起來，
+ * 之後可以複製到別張標籤，或設成觸發。
+ */
+@Serializable
+data class NfcRecord(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String = "",
+    val uid: String = "",
+    /** 標籤的 NDEF 內容(base64,可原樣寫回別張標籤);空＝這張只有 UID、沒有 NDEF 內容 */
+    val ndefBase64: String = "",
+    /** 給人看的內容摘要(網址/文字…) */
+    val summary: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 /** 觸發來源 */
 @Serializable
 enum class TriggerSource {

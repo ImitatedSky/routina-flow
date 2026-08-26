@@ -1,6 +1,7 @@
 package com.routina.app.data
 
 import android.content.Context
+import com.routina.app.model.NfcRecord
 import com.routina.app.model.Routine
 import com.routina.app.model.RunLog
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +40,7 @@ class RoutineRepository private constructor(context: Context) {
 
     private val routinesFile: File get() = File(appContext.filesDir, FILE_ROUTINES)
     private val logsFile: File get() = File(appContext.filesDir, FILE_LOGS)
+    private val nfcFile: File get() = File(appContext.filesDir, FILE_NFC)
 
     private val _routines = MutableStateFlow<List<Routine>>(emptyList())
     val routines: StateFlow<List<Routine>> = _routines.asStateFlow()
@@ -46,10 +48,14 @@ class RoutineRepository private constructor(context: Context) {
     private val _logs = MutableStateFlow<List<RunLog>>(emptyList())
     val logs: StateFlow<List<RunLog>> = _logs.asStateFlow()
 
+    private val _nfcTags = MutableStateFlow<List<NfcRecord>>(emptyList())
+    val nfcTags: StateFlow<List<NfcRecord>> = _nfcTags.asStateFlow()
+
     init {
         // 資料量小（數十筆），初始化時同步載入，讓 UI 與背景元件第一幀就有正確資料
         _routines.value = readList(routinesFile, ListSerializer(Routine.serializer()))
         _logs.value = readList(logsFile, ListSerializer(RunLog.serializer()))
+        _nfcTags.value = readList(nfcFile, ListSerializer(NfcRecord.serializer()))
     }
 
     // ---------- 讀取 ----------
@@ -109,6 +115,24 @@ class RoutineRepository private constructor(context: Context) {
         persistLogs()
     }
 
+    // ---------- NFC 標籤庫 ----------
+
+    fun upsertNfc(record: NfcRecord) {
+        val current = _nfcTags.value
+        val index = current.indexOfFirst { it.id == record.id }
+        _nfcTags.value = if (index >= 0) {
+            current.toMutableList().apply { this[index] = record }
+        } else {
+            current + record
+        }
+        persistNfc()
+    }
+
+    fun deleteNfc(id: String) {
+        _nfcTags.value = _nfcTags.value.filterNot { it.id == id }
+        persistNfc()
+    }
+
     // ---------- 寫入 ----------
 
     /**
@@ -129,11 +153,20 @@ class RoutineRepository private constructor(context: Context) {
         }
     }
 
+    private fun persistNfc() {
+        scope.launch {
+            writeMutex.withLock { writeAtomically(nfcFile, encodeNfc(_nfcTags.value)) }
+        }
+    }
+
     private fun encodeRoutines(value: List<Routine>): String =
         json.encodeToString(ListSerializer(Routine.serializer()), value)
 
     private fun encodeLogs(value: List<RunLog>): String =
         json.encodeToString(ListSerializer(RunLog.serializer()), value)
+
+    private fun encodeNfc(value: List<NfcRecord>): String =
+        json.encodeToString(ListSerializer(NfcRecord.serializer()), value)
 
     /**
      * 背景元件（Receiver / Service）寫入紀錄後行程可能立刻結束，
@@ -163,6 +196,7 @@ class RoutineRepository private constructor(context: Context) {
     companion object {
         private const val FILE_ROUTINES = "routines.json"
         private const val FILE_LOGS = "logs.json"
+        private const val FILE_NFC = "nfc_tags.json"
         private const val MAX_LOGS = 50
 
         @Volatile
