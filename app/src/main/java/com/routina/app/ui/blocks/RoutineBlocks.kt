@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -560,26 +559,20 @@ fun ActionBlock(
             horizontalArrangement = Arrangement.spacedBy(metrics.contentSpacing)
         ) {
             BlockLabel(actionBlockLabel(action), metrics, color = content)
-            ParamField(
-                text = actionParamText(action),
-                metrics = metrics,
-                modifier = Modifier.weight(1f, fill = false),
-                leadingIcon = paramIcon,
-                onClick = onBodyClick
-            )
-        }
-        if (showControls) {
-            if (reorderableScope != null) {
-                val handleModifier = with(reorderableScope) {
-                    Modifier.draggableHandle(
-                        onDragStarted = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        },
-                        interactionSource = interactionSource
-                    )
-                }
-                BlockDragHandle(Icons.Filled.DragHandle, "拖曳排序", content, handleModifier)
+            // 參數欄為空（流程標記如「結束如果／否則」）時不畫空白膠囊，維持乾淨
+            val param = actionParamText(action)
+            if (param.isNotBlank()) {
+                ParamField(
+                    text = param,
+                    metrics = metrics,
+                    modifier = Modifier.weight(1f, fill = false),
+                    leadingIcon = paramIcon,
+                    onClick = onBodyClick
+                )
             }
+        }
+        // 排序改成長按積木本體拿起（見上方 longPressDraggableHandle），不再另放拖曳握把，減少視覺雜訊
+        if (showControls) {
             BlockIconButton(Icons.Filled.Close, "移除動作", content, onRemove)
         }
     }
@@ -709,32 +702,6 @@ fun RoutinePreviewStack(
         if (hidden > 0) add { MoreActionsBlock(hidden) }
     }
     BlockStack(blocks = blocks, modifier = modifier)
-}
-
-/**
- * 積木上的拖曳握把槽：套用 lib 的 draggableHandle 修飾符（拖握把即開始排序），
- * 本身不是點擊目標，外觀與 [BlockIconButton] 一致。
- */
-@Composable
-private fun BlockDragHandle(
-    icon: ImageVector,
-    contentDescription: String,
-    content: Color,
-    handleModifier: Modifier
-) {
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .then(handleModifier),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = content.copy(alpha = 0.7f),
-            modifier = Modifier.size(20.dp)
-        )
-    }
 }
 
 /** 積木上的半透明小圖示（顏色跟隨積木文字色）；[onClick] 為 null 代表 disabled */
