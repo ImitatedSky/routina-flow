@@ -139,6 +139,8 @@ object RoutineExecutor {
             trigger.putAll(triggerContext)
             // 全域變數在執行開始時載入，`{{全域:名稱}}` 讀得到；期間的寫入結束時才落地
             globals.putAll(repository.globalsSnapshot())
+            // 最外層程序先入呼叫堆疊，讓「執行程序」動作能擋住繞回自己的循環呼叫
+            callStack.add(routine.id)
         }
 
         // 動作以直譯器執行（支援 如果／否則／while／重複 的流程控制）；扁平清單用配對標記表達層級。
@@ -251,6 +253,14 @@ object RoutineExecutor {
                     i = end + 1
                 }
 
+                is Action.RunRoutine -> {
+                    runSubRoutine(
+                        action, context, source, canLaunchActivity, allowWait,
+                        fgsSwitch, ctx, results, budget
+                    )
+                    i++
+                }
+
                 // 直接走到的孤立標記（正常流程下配對跳轉不會停在這）→ 略過
                 is Action.ElseIf, is Action.Else, is Action.EndIf,
                 is Action.EndWhile, is Action.EndRepeat -> i++
@@ -354,6 +364,47 @@ object RoutineExecutor {
     /** 迴圈計數在情境中的鍵；以 {{迴圈:次數}} 引用 */
     private const val LOOP_INDEX_KEY = "迴圈:次數"
 
+    /** 「執行程序」的最大巢狀深度，配合呼叫堆疊擋住循環／過深呼叫 */
+    private const val MAX_CALL_DEPTH = 10
+
+    /**
+     * 「執行程序」動作：把目標程序的動作用同一套直譯器、同一個情境與預算跑一遍
+     * （變數與 {{result}} 因此串接流動）。目標不存在、循環呼叫或巢狀過深時記一筆並略過，不執行。
+     */
+    private suspend fun runSubRoutine(
+        action: Action.RunRoutine,
+        context: Context,
+        source: TriggerSource,
+        canLaunchActivity: Boolean,
+        allowWait: Boolean,
+        fgsSwitch: ForegroundTypeSwitch?,
+        ctx: RunContext,
+        results: MutableList<ActionResult>,
+        budget: IntArray
+    ) {
+        val label = "執行程序：${action.routineName.ifBlank { "(未選)" }}"
+        val target = action.routineId.takeIf { it.isNotBlank() }
+            ?.let { RoutineRepository.get(context).findById(it) }
+        if (target == null) {
+            results.add(ActionResult(label, false, "找不到程序（可能已被刪除）"))
+            return
+        }
+        if (target.id in ctx.callStack || ctx.callStack.size >= MAX_CALL_DEPTH) {
+            results.add(ActionResult("執行程序：${target.name}", false, "略過：避免循環呼叫或巢狀過深"))
+            return
+        }
+        results.add(ActionResult("執行程序：${target.name}", true))
+        ctx.callStack.add(target.id)
+        try {
+            runProgram(
+                target.actions, 0, target.actions.size, context, target, source,
+                canLaunchActivity, allowWait, fgsSwitch, ctx, results, budget
+            )
+        } finally {
+            ctx.callStack.remove(target.id)
+        }
+    }
+
     /**
      * 執行單一動作。動作函式回傳非 null 字串時視為補充說明，
      * 會附加在紀錄的描述後面（例如背景無法直接啟動而改以通知呈現）。
@@ -398,10 +449,10 @@ object RoutineExecutor {
                 is Action.Text -> doText(resolved, ctx)
                 is Action.SetVariable -> doSetVariable(resolved, ctx)
                 is Action.SetGlobalVariable -> doSetGlobalVariable(resolved, ctx)
-                // 流程控制標記由直譯器 runProgram 處理；走到這裡代表是孤立標記 → 不做事
+                // 流程控制標記與「執行程序」由直譯器 runProgram 處理；走到這裡不做事
                 is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
                 is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
-                is Action.EndRepeat -> null
+                is Action.EndRepeat, is Action.RunRoutine -> null
             }
             ActionResult(if (note == null) description else "$description（$note）", true)
         } catch (t: Throwable) {
@@ -1428,6 +1479,7 @@ object RoutineExecutor {
         is Action.EndWhile -> "結束重複"
         is Action.RepeatBegin -> "重複 ${numLabel(action.countExpr, action.count)} 次"
         is Action.EndRepeat -> "結束重複 N 次"
+        is Action.RunRoutine -> "執行程序：${action.routineName.ifBlank { "(未選)" }}"
     }
 
     /** 判斷式的簡短描述（給紀錄／積木用），例如「電量 > 20」 */

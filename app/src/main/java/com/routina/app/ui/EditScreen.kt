@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
@@ -234,6 +235,7 @@ fun EditScreen(
     // 刪除／複製／方塊顏色都收於右上「⋯」溢位選單，離開返回鍵的相鄰區，杜絕誤觸
     var showMenu by rememberSaveable { mutableStateOf(false) }
     var showColorPicker by rememberSaveable { mutableStateOf(false) }
+    var showTriggerLimit by rememberSaveable { mutableStateOf(false) }
     var showExitConfirm by rememberSaveable { mutableStateOf(false) }
 
     // 拖曳排序拿起 / 讓位時的觸覺回饋
@@ -382,6 +384,16 @@ fun EditScreen(
                                     showColorPicker = true
                                 }
                             )
+                            DropdownMenuItem(
+                                text = { Text("觸發限制") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Timer, contentDescription = null)
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    showTriggerLimit = true
+                                }
+                            )
                             // 複製／刪除只在編輯既有程序時有意義（新建還沒有可複製 / 可刪的對象）
                             if (existing != null) {
                                 DropdownMenuItem(
@@ -429,18 +441,27 @@ fun EditScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            RoutinePreview(draft)
-
-            Spacer(Modifier.height(16.dp))
-
-            OutlinedTextField(
-                value = draft.name,
-                onValueChange = { draft = draft.copy(name = it) },
-                label = { Text("名稱") },
-                placeholder = { Text("例如：早晨通勤") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            // 名稱列：左側小色塊即時反映方塊顏色（點一下＝改色），右側名稱輸入，一列搞定
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(routineAccent(draft))
+                        .clickable { showColorPicker = true }
+                )
+                OutlinedTextField(
+                    value = draft.name,
+                    onValueChange = { draft = draft.copy(name = it) },
+                    label = { Text("名稱") },
+                    placeholder = { Text("例如：早晨通勤") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
             Spacer(Modifier.height(20.dp))
 
@@ -509,14 +530,6 @@ fun EditScreen(
                     showActionPalette = true
                 })
             }
-
-            Spacer(Modifier.height(20.dp))
-            TriggerLimitSection(
-                routine = draft,
-                onMaxRunsChange = { draft = draft.copy(maxRuns = it) },
-                onExpiresAtChange = { draft = draft.copy(expiresAt = it) },
-                onResetCount = { draft = draft.copy(runCount = 0) }
-            )
 
             // 缺背景位置權限時的引導：Android 10 可直接請求，11+ 只能導到 App 設定頁
             if (locationCircle != null && playServicesAvailable && !hasBackgroundLocation) {
@@ -644,6 +657,10 @@ fun EditScreen(
             precedingActions = draft.actions.take(target.index),
             // 已存在的全域變數也可被引用（{{全域:名稱}}）
             globalNames = viewModel.globalNames(),
+            // 「執行程序」可選的其他程序（排除自己，避免直接自我呼叫）
+            routineChoices = viewModel.routines.value
+                .filter { it.id != draft.id }
+                .map { it.id to it.name.ifBlank { "(未命名)" } },
             onConfirm = { updated ->
                 if (target.index in draft.actions.indices) {
                     draft = draft.copy(
@@ -849,6 +866,24 @@ fun EditScreen(
         )
     }
 
+    if (showTriggerLimit) {
+        AlertDialog(
+            onDismissRequest = { showTriggerLimit = false },
+            title = { Text("觸發限制") },
+            text = {
+                TriggerLimitSection(
+                    routine = draft,
+                    onMaxRunsChange = { draft = draft.copy(maxRuns = it) },
+                    onExpiresAtChange = { draft = draft.copy(expiresAt = it) },
+                    onResetCount = { draft = draft.copy(runCount = 0) }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showTriggerLimit = false }) { Text("完成") }
+            }
+        )
+    }
+
     if (showExitConfirm) {
         AlertDialog(
             onDismissRequest = { showExitConfirm = false },
@@ -885,39 +920,6 @@ fun EditScreen(
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
             }
-        )
-    }
-}
-
-/**
- * 編輯畫面最上方的預覽：用目前（草稿）的顏色顯示這個程序，方便一眼確認方塊顏色改了沒。
- */
-@Composable
-private fun RoutinePreview(routine: Routine) {
-    val accent = routineAccent(routine)
-    val content = blockContentColor(accent)
-    Column {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(accent)
-                .padding(horizontal = 16.dp, vertical = 16.dp)
-        ) {
-            Text(
-                routine.name.ifBlank { "(未命名)" },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = content,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "目前的方塊顏色。點右上 ⋯ →「方塊顏色」可更換。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -991,19 +993,7 @@ private fun TriggerLimitSection(
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-            .padding(16.dp)
-    ) {
-        Text(
-            "觸發限制（選用）",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold
-        )
-        Spacer(Modifier.height(4.dp))
+    Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             "達到次數或結束日期後，會自動停用此程序。手動測試不計入次數。",
             style = MaterialTheme.typography.bodySmall,
@@ -1157,31 +1147,17 @@ private fun ColorDot(color: Color, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** 積木畫布：點狀網格背景，Scratch 編輯區質感 */
+/** 積木畫布：乾淨的圓角底板（比照 iOS 捷徑的平整編輯區，不做網格點紋） */
 @Composable
 private fun BlockCanvas(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val dotColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .drawBehind {
-                val step = 20.dp.toPx()
-                val radius = 1.dp.toPx()
-                var y = step / 2f
-                while (y < size.height) {
-                    var x = step / 2f
-                    while (x < size.width) {
-                        drawCircle(color = dotColor, radius = radius, center = Offset(x, y))
-                        x += step
-                    }
-                    y += step
-                }
-            }
             .padding(horizontal = 12.dp, vertical = 16.dp),
         // 帽子積木 / 排序容器 / 幽靈積木之間維持與堆疊相同的等距間隔
         verticalArrangement = Arrangement.spacedBy(BlockStackSpacing),

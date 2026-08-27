@@ -602,6 +602,18 @@ sealed class Action {
     @SerialName("end_repeat")
     data object EndRepeat : Action()
 
+    /**
+     * 執行另一個程序：跑到這塊時，把 [routineId] 指向的程序的動作**當場跑一遍**
+     * （共用同一個執行情境，變數與 `{{result}}` 會串接流動）。[routineName] 只作顯示用，
+     * 目標被改名或刪除仍以 [routineId] 為準。執行時會擋循環呼叫（見 RoutineExecutor）。
+     */
+    @Serializable
+    @SerialName("run_routine")
+    data class RunRoutine(
+        val routineId: String = "",
+        val routineName: String = ""
+    ) : Action()
+
     companion object {
         const val METHOD_GET = "GET"
         const val METHOD_POST = "POST"

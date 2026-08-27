@@ -143,6 +143,7 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.EndWhile -> "結束重複"
     is Action.RepeatBegin -> "重複 N 次"
     is Action.EndRepeat -> "結束重複 N 次"
+    is Action.RunRoutine -> "執行程序"
 }
 
 /** 動作積木上的標籤文字（參數欄前的敘述） */
@@ -179,6 +180,7 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.EndWhile -> "結束重複"
     is Action.RepeatBegin -> "重複"
     is Action.EndRepeat -> "結束重複"
+    is Action.RunRoutine -> "執行程序"
 }
 
 /** 動作積木參數欄的內容 */
@@ -226,6 +228,7 @@ fun actionParamText(action: Action): String = when (action) {
     is Action.RepeatBegin -> numParam(action.countExpr, "${action.count} 次")
     is Action.Else -> "其餘情況"
     is Action.EndIf, is Action.EndWhile, is Action.EndRepeat -> ""
+    is Action.RunRoutine -> action.routineName.ifBlank { "選擇程序" }
 }
 
 /** 判斷式的積木參數摘要，例如「電量 > 20」 */

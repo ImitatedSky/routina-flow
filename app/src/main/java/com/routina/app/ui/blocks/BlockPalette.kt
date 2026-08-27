@@ -133,7 +133,8 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
             Action.ElseIf(),
             Action.Else,
             Action.WhileBegin(),
-            Action.RepeatBegin()
+            Action.RepeatBegin(),
+            Action.RunRoutine()
         )
     )
 )

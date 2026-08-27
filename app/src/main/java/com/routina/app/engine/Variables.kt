@@ -24,6 +24,9 @@ class RunContext {
 
     /** 本次執行有寫入的全域變數名稱；執行結束時據此把異動落地（未動的不寫，避免無謂覆蓋） */
     val dirtyGlobals = mutableSetOf<String>()
+
+    /** 目前正在執行中的程序 id 堆疊（含最外層）；「執行程序」動作據此擋循環呼叫 */
+    val callStack = mutableSetOf<String>()
 }
 
 /**

@@ -30,6 +30,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -91,7 +92,9 @@ fun ActionEditDialog(
     precedingActions: List<Action>,
     onConfirm: (Action) -> Unit,
     onDismiss: () -> Unit,
-    globalNames: List<String> = emptyList()
+    globalNames: List<String> = emptyList(),
+    // 「執行程序」可選的其他程序（id 到名稱）；由呼叫端從 ViewModel 取得，保持本元件與資料層解耦
+    routineChoices: List<Pair<String, String>> = emptyList()
 ) {
     var draft by remember(initial) { mutableStateOf(initial) }
     var showAppPicker by remember { mutableStateOf(false) }
@@ -636,6 +639,45 @@ fun ActionEditDialog(
                 is Action.EndIf -> ControlMarkerInfo("「如果」區塊的結尾。")
                 is Action.EndWhile -> ControlMarkerInfo("「一直重複…當」區塊的結尾。")
                 is Action.EndRepeat -> ControlMarkerInfo("「重複 N 次」區塊的結尾。")
+
+                is Action.RunRoutine -> Column {
+                    if (routineChoices.isEmpty()) {
+                        Text(
+                            "目前沒有其他程序可以執行。先建立別的程序，再回來這裡選。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        var expanded by remember { mutableStateOf(false) }
+                        val selectedName = routineChoices.firstOrNull { it.first == current.routineId }?.second
+                        Box {
+                            TextButton(onClick = { expanded = true }) {
+                                Text(selectedName ?: "選擇要執行的程序")
+                                Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                            }
+                            DropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false }
+                            ) {
+                                routineChoices.forEach { (id, name) ->
+                                    DropdownMenuItem(
+                                        text = { Text(name) },
+                                        onClick = {
+                                            draft = current.copy(routineId = id, routineName = name)
+                                            expanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "跑到這塊時，會把所選程序的動作跑一遍（共用變數與結果）；會自動擋住循環呼叫。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
@@ -1136,6 +1178,8 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
     is Action.EndRepeat -> true
+    // 執行程序必須選定一個目標程序
+    is Action.RunRoutine -> action.routineId.isNotBlank()
 }
 
 /** 判斷式編輯器：左值 + 運算子 + 右值（為空／不為空時隱藏右值） */

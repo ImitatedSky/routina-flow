@@ -91,6 +91,9 @@ object RoutinaColors {
     // ---------- 動作：流程控制（棕，與判斷/迴圈語意區隔於其他家族） ----------
     val ActionControl = Color(0xFF6D4C41)
 
+    // ---------- 動作：執行程序（青，「呼叫另一個程序」與流程控制區隔） ----------
+    val ActionRunRoutine = Color(0xFF00796B)
+
     // ---------- 執行結果 ----------
     val Success = Color(0xFF2E7D32)
     val Failure = Color(0xFFC62828)
@@ -155,6 +158,7 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
     is Action.EndRepeat -> RoutinaColors.ActionControl
+    is Action.RunRoutine -> RoutinaColors.ActionRunRoutine
 }
 
 /** 方塊主色：優先用使用者自訂的 [Routine.color]，否則用觸發家族色 */
