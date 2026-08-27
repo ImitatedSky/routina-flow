@@ -1,0 +1,28 @@
+# MIFARE Classic 已知金鑰字典（卡片探測用）
+#
+# 格式：每行一把金鑰，12 位十六進位（KeyA/KeyB 都會試），# 開頭為註解，空行略過。
+# 探測時會用內建預設金鑰 + 這份清單逐磁區嘗試；讀得到＝弱加密／可複製，
+# 全部讀不到＝真正的自訂金鑰（得靠 Flipper mfkey32 / Proxmark 從讀卡機端反推）。
+#
+# 想提高破解率：把 Proxmark 的 mfc_default_keys.dic 或 Flipper 的 mf_classic_dict.nfc
+# 裡的金鑰（同樣一行一把 12 位 hex）貼到本檔最後即可，程式會自動去重載入。
+#
+# 以下為公開、廣為流傳的出廠／通用金鑰（mfoc / Proxmark 內建預設集）：
+
+FFFFFFFFFFFF
+000000000000
+A0A1A2A3A4A5
+B0B1B2B3B4B5
+A0B0C0D0E0F0
+D3F7D3F7D3F7
+AABBCCDDEEFF
+4D3A99C351DD
+1A982C7E459A
+ABCDEF123456
+714C5C886E97
+587EE5F9350F
+A0478CC39091
+533CB6C723F6
+8FD0A4F256E9
+000000000001
+123456789ABC

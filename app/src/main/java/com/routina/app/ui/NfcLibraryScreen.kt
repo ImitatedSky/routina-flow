@@ -506,7 +506,8 @@ private fun NfcInspectDialog(
                             Spacer(Modifier.height(4.dp))
                             Text(
                                 "MIFARE 類型：${current.mifareType}　" +
-                                    "可讀磁區 ${current.readableSectors ?: 0} / ${current.sectorCount ?: 0}",
+                                    "可讀磁區 ${current.readableSectors ?: 0} / ${current.sectorCount ?: 0}" +
+                                    "（試過 ${current.triedKeyCount} 把已知金鑰）",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

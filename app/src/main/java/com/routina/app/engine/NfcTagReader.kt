@@ -130,12 +130,15 @@ object NfcTagReader {
      *
      * @return 是否成功啟用
      */
-    fun enableInspectMode(activity: Activity, onResult: (CardInfo) -> Unit): Boolean =
-        enable(activity, BASE_READER_FLAGS) { tag ->
+    fun enableInspectMode(activity: Activity, onResult: (CardInfo) -> Unit): Boolean {
+        // 字典在啟用時載入一次（讀 assets 是 I/O），之後每次掃到卡都沿用同一份
+        val keys = loadKeyDictionary(activity)
+        return enable(activity, BASE_READER_FLAGS) { tag ->
             // 回呼來自 binder 執行緒——MIFARE 驗證是 I/O，就在這裡做完，只把結果 post 回主執行緒
-            val info = readInfo(tag)
+            val info = readInfo(tag, keys)
             onMain { onResult(info) }
         }
+    }
 
     fun disableReaderMode(activity: Activity) {
         runCatching { adapter(activity)?.disableReaderMode(activity) }
@@ -214,6 +217,7 @@ object NfcTagReader {
         val mifareType: String?,
         val sectorCount: Int?,
         val readableSectors: Int?,
+        val triedKeyCount: Int,
         val hasIsoDep: Boolean,
         val hasNdef: Boolean,
         val verdict: String
@@ -249,7 +253,7 @@ object NfcTagReader {
      * 讀出卡片的技術特徵：UID、tech 清單、ATQA/SAK、MIFARE 類型與可用預設金鑰讀到的磁區數，
      * 最後給一段誠實的判讀。所有卡片 I/O 都包在 runCatching 內：讀到一半移開卡片不會讓 App 崩潰。
      */
-    private fun readInfo(tag: Tag): CardInfo {
+    private fun readInfo(tag: Tag, keys: List<ByteArray>): CardInfo {
         val uid = uidOf(tag)
         val techList = tag.techList.map { it.substringAfterLast('.') } // 例：NfcA、MifareClassic、IsoDep、Ndef
         val hasIsoDep = "IsoDep" in techList
@@ -280,11 +284,11 @@ object NfcTagReader {
                     else -> "未知"
                 }
                 sectorCount = mc.sectorCount
-                // connect + 逐磁區試預設金鑰都包在 runCatching：移開卡片只會拿到 null，不崩潰
+                // connect + 逐磁區試金鑰字典都包在 runCatching：移開卡片只會拿到 null，不崩潰
                 readableSectors = runCatching {
                     mc.connect()
                     try {
-                        countReadableSectors(mc)
+                        countReadableSectors(mc, keys)
                     } finally {
                         runCatching { mc.close() }
                     }
@@ -296,6 +300,7 @@ object NfcTagReader {
             mifarePresent = mifareType != null,
             sectorCount = sectorCount,
             readableSectors = readableSectors,
+            triedKeyCount = keys.size,
             hasIsoDep = hasIsoDep,
             hasNdef = hasNdef
         )
@@ -308,17 +313,18 @@ object NfcTagReader {
             mifareType = mifareType,
             sectorCount = sectorCount,
             readableSectors = readableSectors,
+            triedKeyCount = keys.size,
             hasIsoDep = hasIsoDep,
             hasNdef = hasNdef,
             verdict = verdict
         )
     }
 
-    /** 逐磁區用預設金鑰清單試 KeyA／KeyB，回傳任一把金鑰能驗證成功的磁區數 */
-    private fun countReadableSectors(mc: MifareClassic): Int {
+    /** 逐磁區用金鑰字典試 KeyA／KeyB，回傳任一把金鑰能驗證成功的磁區數 */
+    private fun countReadableSectors(mc: MifareClassic, keys: List<ByteArray>): Int {
         var readable = 0
         for (s in 0 until mc.sectorCount) {
-            val ok = DEFAULT_KEYS.any { key ->
+            val ok = keys.any { key ->
                 runCatching { mc.authenticateSectorWithKeyA(s, key) }.getOrDefault(false) ||
                     runCatching { mc.authenticateSectorWithKeyB(s, key) }.getOrDefault(false)
             }
@@ -335,6 +341,7 @@ object NfcTagReader {
         mifarePresent: Boolean,
         sectorCount: Int?,
         readableSectors: Int?,
+        triedKeyCount: Int,
         hasIsoDep: Boolean,
         hasNdef: Boolean
     ): String {
@@ -344,16 +351,17 @@ object NfcTagReader {
                 val readable = readableSectors ?: 0
                 when {
                     sectors > 0 && readable == sectors ->
-                        "MIFARE Classic:所有磁區都能用預設金鑰讀取＝弱加密。可用 magic UID 白卡 + " +
+                        "MIFARE Classic:所有磁區都能用已知金鑰讀取＝弱加密。可用 magic UID 白卡 + " +
                             "MIFARE Classic Tool 複製到實體卡,或部分國行手機的內建門卡功能。" +
                             "但第三方 App 無法讓手機直接變成這張卡。"
 
                     readable in 1 until sectors ->
-                        "MIFARE Classic:部分磁區可讀、部分是自訂金鑰。" +
-                            "要完整複製需要那些金鑰(手機一般拿不到)。"
+                        "MIFARE Classic:$readable/$sectors 磁區可用已知金鑰讀取,其餘是自訂金鑰。" +
+                            "要完整複製需要那些金鑰——用 Flipper Zero(mfkey32)貼著讀卡機反推最實際。"
 
                     else ->
-                        "MIFARE Classic:所有磁區都是自訂金鑰,讀不到,無法複製(除非有金鑰)。"
+                        "MIFARE Classic:試過 $triedKeyCount 把已知金鑰,所有磁區仍讀不到＝真正的自訂金鑰。" +
+                            "字典攻擊無效,需要 Flipper Zero(mfkey32)或 Proxmark3 從讀卡機端反推金鑰才可能複製。"
                 }
             }
 
@@ -387,7 +395,7 @@ object NfcTagReader {
         return out
     }
 
-    /** MIFARE Classic 常見的出廠／通用預設金鑰；能用這些讀到＝弱加密 */
+    /** MIFARE Classic 常見的出廠／通用預設金鑰；能用這些讀到＝弱加密。也是 assets 字典讀不到時的保底 */
     private val DEFAULT_KEYS: List<ByteArray> = listOf(
         MifareClassic.KEY_DEFAULT,
         MifareClassic.KEY_MIFARE_APPLICATION_DIRECTORY,
@@ -400,6 +408,32 @@ object NfcTagReader {
         hexToBytes("D3F7D3F7D3F7"),
         hexToBytes("AABBCCDDEEFF")
     )
+
+    /** assets 內的已知金鑰字典檔（每行一把 12 位 hex，# 註解）；使用者可貼入完整字典擴充 */
+    private const val KEY_DICT_ASSET = "mifare_classic_dict.txt"
+
+    /**
+     * 載入 MIFARE Classic 金鑰字典：內建 [DEFAULT_KEYS] 加上 assets 裡 [KEY_DICT_ASSET] 的公開字典。
+     * 讀不到 assets（或內容全無效）就只回內建預設。以 hex 去重，預設在前、字典在後。
+     */
+    fun loadKeyDictionary(context: Context): List<ByteArray> {
+        val byHex = LinkedHashMap<String, ByteArray>()
+        DEFAULT_KEYS.forEach { byHex[it.toHexKey()] = it }
+        runCatching {
+            context.assets.open(KEY_DICT_ASSET).bufferedReader().useLines { lines ->
+                lines.forEach { raw ->
+                    val hex = raw.substringBefore('#').trim().uppercase()
+                    if (hex.length == 12 && hex.all { it in '0'..'9' || it in 'A'..'F' }) {
+                        byHex.putIfAbsent(hex, hexToBytes(hex))
+                    }
+                }
+            }
+        }
+        return byHex.values.toList()
+    }
+
+    /** 金鑰位元組轉大寫 hex（去重的鍵） */
+    private fun ByteArray.toHexKey(): String = joinToString("") { "%02X".format(it) }
 
     /** 把 NDEF 內容整理成給人看的摘要（網址／文字／MIME 類型…） */
     private fun summarizeNdef(msg: NdefMessage): String {
