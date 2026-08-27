@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AltRoute
 import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Home
@@ -35,6 +36,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.routina.app.model.Action
+import com.routina.app.model.CompareOp
+import com.routina.app.model.Condition
 import com.routina.app.model.RingerModeType
 import com.routina.app.model.Routine
 import com.routina.app.model.Trigger
@@ -194,6 +197,35 @@ object RoutineTemplates {
                     trigger = Trigger.NotificationPosted(),
                     actions = listOf(
                         Action.Clipboard(text = "{{通知來源App}}｜{{通知標題}}：{{通知內容}}")
+                    )
+                )
+            }
+        ),
+        // 示範 V1 流程控制：重複 N 次（含 {{迴圈:次數}}）+ 依電量的 如果／否則 分支。
+        // 手動觸發，按「執行一次」即可看到效果，不需任何額外權限。
+        RoutineTemplate(
+            id = "flow-demo",
+            title = "流程範例",
+            description = "手動：重複 3 次通知，再依電量分支（if／迴圈範例）",
+            color = RoutinaColors.ActionControl,
+            icon = Icons.Filled.AltRoute,
+            needsSetup = false,
+            build = {
+                Routine(
+                    name = "流程範例",
+                    enabled = false,
+                    trigger = Trigger.Manual,
+                    actions = listOf(
+                        Action.RepeatBegin(count = 3),
+                        Action.Notify(title = "第 {{迴圈:次數}} 次", message = "重複 N 次示範"),
+                        Action.EndRepeat,
+                        Action.IfBegin(
+                            Condition(left = "{{電量}}", op = CompareOp.GREATER_EQUAL, right = "50")
+                        ),
+                        Action.Notify(title = "電量充足", message = "目前 {{電量}}%"),
+                        Action.Else,
+                        Action.Notify(title = "建議充電", message = "目前 {{電量}}%"),
+                        Action.EndIf
                     )
                 )
             }
