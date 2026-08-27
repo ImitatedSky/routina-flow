@@ -155,6 +155,7 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.Text -> RoutinaColors.ActionText
     is Action.SetVariable -> RoutinaColors.ActionSetVariable
     is Action.SetGlobalVariable -> RoutinaColors.ActionSetVariable
+    is Action.Calculate -> RoutinaColors.ActionSetVariable
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
     is Action.EndRepeat -> RoutinaColors.ActionControl

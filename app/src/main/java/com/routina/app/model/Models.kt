@@ -558,6 +558,20 @@ sealed class Action {
         val template: String = ""
     ) : Action()
 
+    /**
+     * 計算：把 `左 [運算子] 右` 的算術結果存進具名變數 [name]（供後續以 `{{var:名稱}}` 引用）。
+     * [left]／[right] 可含變數 token（例如 `{{var:count}}`、`{{迴圈:次數}}`），執行時先代入再運算。
+     * 整數結果顯示為整數，非整數保留小數；除以 0 記為失敗。
+     */
+    @Serializable
+    @SerialName("calculate")
+    data class Calculate(
+        val name: String = "",
+        val left: String = "",
+        val op: MathOp = MathOp.ADD,
+        val right: String = ""
+    ) : Action()
+
     // ---- 流程控制（配對標記）----
     // 扁平清單用配對的 begin/end 標記表達層級，由 RoutineExecutor 的直譯器解讀；
     // dispatch 時皆為 no-op（流程由直譯器處理）。對不成對的標記直譯器保持穩健、不崩潰。
@@ -692,6 +706,16 @@ val CompareOp.usesRightOperand: Boolean
     get() = this !in setOf(
         CompareOp.IS_EMPTY, CompareOp.IS_NOT_EMPTY, CompareOp.IS_TRUE, CompareOp.IS_FALSE
     )
+
+/** 「計算」動作的算術運算子 */
+@Serializable
+enum class MathOp {
+    @SerialName("add") ADD,
+    @SerialName("sub") SUBTRACT,
+    @SerialName("mul") MULTIPLY,
+    @SerialName("div") DIVIDE,
+    @SerialName("mod") MODULO
+}
 
 @Serializable
 enum class RingerModeType {

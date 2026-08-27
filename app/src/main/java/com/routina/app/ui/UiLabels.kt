@@ -6,6 +6,7 @@ import com.routina.app.model.AppTarget
 import com.routina.app.model.BtDevice
 import com.routina.app.model.CompareOp
 import com.routina.app.model.Condition
+import com.routina.app.model.MathOp
 import com.routina.app.model.GeoCircle
 import com.routina.app.model.RingerModeType
 import com.routina.app.model.Routine
@@ -135,6 +136,7 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.Text -> "文字"
     is Action.SetVariable -> "設定變數"
     is Action.SetGlobalVariable -> "設定全域變數"
+    is Action.Calculate -> "計算"
     is Action.IfBegin -> "如果"
     is Action.ElseIf -> "否則如果"
     is Action.Else -> "否則"
@@ -172,6 +174,7 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.Text -> "文字"
     is Action.SetVariable -> "設定變數"
     is Action.SetGlobalVariable -> "設定全域變數"
+    is Action.Calculate -> "計算"
     is Action.IfBegin -> "如果"
     is Action.ElseIf -> "否則如果"
     is Action.Else -> "否則"
@@ -222,6 +225,11 @@ fun actionParamText(action: Action): String = when (action) {
         if (value.isBlank()) name else truncate("$name = $value", 20)
     }
 
+    is Action.Calculate -> truncate(
+        "${action.name.ifBlank { "未命名" }} = ${action.left} ${mathOpLabel(action.op)} ${action.right}",
+        20
+    )
+
     is Action.IfBegin -> conditionSummary(action.condition)
     is Action.ElseIf -> conditionSummary(action.condition)
     is Action.WhileBegin -> conditionSummary(action.condition)
@@ -253,6 +261,15 @@ fun compareOpLabel(op: CompareOp): String = when (op) {
     CompareOp.IS_NOT_EMPTY -> "不為空"
     CompareOp.IS_TRUE -> "為真"
     CompareOp.IS_FALSE -> "為假"
+}
+
+/** 算術運算子的短符號（積木參數用） */
+fun mathOpLabel(op: MathOp): String = when (op) {
+    MathOp.ADD -> "+"
+    MathOp.SUBTRACT -> "−"
+    MathOp.MULTIPLY -> "×"
+    MathOp.DIVIDE -> "÷"
+    MathOp.MODULO -> "餘"
 }
 
 /** 數值參數欄：Expr 非空顯示 Expr（數字或截斷後的 `{{...}}`），否則顯示原本的整數文字 */

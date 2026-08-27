@@ -34,6 +34,7 @@ import com.routina.app.model.Action
 import com.routina.app.model.ActionResult
 import com.routina.app.model.CompareOp
 import com.routina.app.model.Condition
+import com.routina.app.model.MathOp
 import com.routina.app.model.RingerModeType
 import com.routina.app.model.Routine
 import com.routina.app.model.RunLog
@@ -449,6 +450,7 @@ object RoutineExecutor {
                 is Action.Text -> doText(resolved, ctx)
                 is Action.SetVariable -> doSetVariable(resolved, ctx)
                 is Action.SetGlobalVariable -> doSetGlobalVariable(resolved, ctx)
+                is Action.Calculate -> doCalculate(resolved, ctx)
                 // 流程控制標記與「執行程序」由直譯器 runProgram 處理；走到這裡不做事
                 is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
                 is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
@@ -487,6 +489,11 @@ object RoutineExecutor {
 
         is Action.SetGlobalVariable ->
             action.copy(template = VariableResolver.resolve(action.template, ctx))
+
+        is Action.Calculate -> action.copy(
+            left = VariableResolver.resolve(action.left, ctx),
+            right = VariableResolver.resolve(action.right, ctx)
+        )
 
         else -> action
     }
@@ -1028,6 +1035,31 @@ object RoutineExecutor {
         return null
     }
 
+    /** 計算：把（已代入變數的）left op right 算完存進具名變數；非數字或除以 0 記為失敗 */
+    private fun doCalculate(action: Action.Calculate, ctx: RunContext): String? {
+        val name = action.name.trim()
+        if (name.isBlank()) error("未設定要存入的變數名稱")
+        val a = action.left.trim().toDoubleOrNull() ?: error("左邊不是數字：「${action.left}」")
+        val b = action.right.trim().toDoubleOrNull() ?: error("右邊不是數字：「${action.right}」")
+        val result = when (action.op) {
+            MathOp.ADD -> a + b
+            MathOp.SUBTRACT -> a - b
+            MathOp.MULTIPLY -> a * b
+            MathOp.DIVIDE -> if (b == 0.0) error("不能除以 0") else a / b
+            MathOp.MODULO -> if (b == 0.0) error("不能對 0 取餘數") else a % b
+        }
+        val text = formatNumber(result)
+        ctx.vars[name] = text
+        return "$name = $text"
+    }
+
+    /** 整數結果去掉小數點；非整數保留（去尾零），四捨五入到 6 位避免浮點雜訊 */
+    private fun formatNumber(d: Double): String = when {
+        d.isNaN() || d.isInfinite() -> "0"
+        d % 1.0 == 0.0 -> d.toLong().toString()
+        else -> String.format(java.util.Locale.US, "%.6f", d).trimEnd('0').trimEnd('.')
+    }
+
     /** 相機權限檢查；未授權時發引導通知並中止這個動作 */
     private fun requireCameraPermission(context: Context) {
         if (!hasSelfPermission(context, Manifest.permission.CAMERA)) {
@@ -1471,6 +1503,9 @@ object RoutineExecutor {
         is Action.SetGlobalVariable ->
             "設定全域變數 ${action.name.ifBlank { "(未命名)" }}：${redactText(action.template)}"
 
+        is Action.Calculate ->
+            "計算 ${action.name.ifBlank { "(未命名)" }} = ${action.left} ${mathOpSymbol(action.op)} ${action.right}"
+
         is Action.IfBegin -> "如果 ${describeCondition(action.condition)}"
         is Action.ElseIf -> "否則如果 ${describeCondition(action.condition)}"
         is Action.Else -> "否則"
@@ -1489,6 +1524,15 @@ object RoutineExecutor {
         } else {
             "${c.left.ifBlank { "(空)" }} ${compareOpSymbol(c.op)}"
         }
+
+    /** 算術運算子的符號（給紀錄／積木用） */
+    private fun mathOpSymbol(op: MathOp): String = when (op) {
+        MathOp.ADD -> "+"
+        MathOp.SUBTRACT -> "−"
+        MathOp.MULTIPLY -> "×"
+        MathOp.DIVIDE -> "÷"
+        MathOp.MODULO -> "餘"
+    }
 
     /** 運算子的符號／簡短文字 */
     private fun compareOpSymbol(op: CompareOp): String = when (op) {

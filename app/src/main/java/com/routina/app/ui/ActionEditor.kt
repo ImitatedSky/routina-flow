@@ -71,6 +71,7 @@ import com.routina.app.model.Action
 import com.routina.app.model.AppTarget
 import com.routina.app.model.CompareOp
 import com.routina.app.model.Condition
+import com.routina.app.model.MathOp
 import com.routina.app.model.RingerModeType
 import com.routina.app.model.usesRightOperand
 import com.routina.app.model.Trigger
@@ -579,6 +580,55 @@ fun ActionEditDialog(
                     Text(
                         "存成跨程序、可持久化的全域變數，任何程序都能以 {{全域:名稱}} 引用；" +
                             "值會保存到下次被覆寫。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.Calculate -> Column {
+                    OutlinedTextField(
+                        value = current.name,
+                        onValueChange = { draft = current.copy(name = it) },
+                        label = { Text("存到變數") },
+                        placeholder = { Text("例如：count") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    VariableTextField(
+                        value = current.left,
+                        onValueChange = { draft = current.copy(left = it) },
+                        label = "左邊",
+                        tokenGroups = numericTokenGroups(tokenGroups),
+                        placeholder = "數字或變數，例如 {{var:count}}",
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "運算",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    ChipRow(
+                        options = MathOp.entries,
+                        selected = current.op,
+                        label = { mathOpFullLabel(it) },
+                        onSelect = { draft = current.copy(op = it) }
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    VariableTextField(
+                        value = current.right,
+                        onValueChange = { draft = current.copy(right = it) },
+                        label = "右邊",
+                        tokenGroups = numericTokenGroups(tokenGroups),
+                        placeholder = "數字或變數，例如 1",
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "把「左邊 運算 右邊」算完存進上面的變數，之後用 {{var:名稱}} 引用。" +
+                            "整數不留小數；除以 0 會記為失敗。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1174,6 +1224,7 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.Text -> action.template.isNotBlank()
     is Action.SetVariable -> action.name.isNotBlank()
     is Action.SetGlobalVariable -> action.name.isNotBlank()
+    is Action.Calculate -> action.name.isNotBlank()
     // 流程控制標記沒有必填欄位（條件空＝恆成立）
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
@@ -1230,6 +1281,15 @@ private fun ConditionEditor(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+/** 算術運算子的選項文字 */
+private fun mathOpFullLabel(op: MathOp): String = when (op) {
+    MathOp.ADD -> "加 +"
+    MathOp.SUBTRACT -> "減 −"
+    MathOp.MULTIPLY -> "乘 ×"
+    MathOp.DIVIDE -> "除 ÷"
+    MathOp.MODULO -> "餘數"
 }
 
 /** 運算子下拉的完整文字（積木上的短標籤見 UiLabels.compareOpLabel） */
