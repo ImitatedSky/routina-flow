@@ -13,6 +13,7 @@ import com.routina.app.engine.NfcTagReader
 import com.routina.app.engine.RoutinaNotificationListener
 import com.routina.app.engine.RoutineExecutor
 import com.routina.app.engine.RoutineManager
+import com.routina.app.model.GlobalVar
 import com.routina.app.model.NfcRecord
 import com.routina.app.model.Routine
 import com.routina.app.model.RunLog
@@ -26,6 +27,7 @@ class RoutineViewModel(application: Application) : AndroidViewModel(application)
     val routines: StateFlow<List<Routine>> = repository.routines
     val logs: StateFlow<List<RunLog>> = repository.logs
     val nfcRecords: StateFlow<List<NfcRecord>> = repository.nfcTags
+    val globals: StateFlow<List<GlobalVar>> = repository.globals
 
     init {
         // App 啟動時對齊排程與監測服務（例如使用者曾強制停止 App）
@@ -65,6 +67,14 @@ class RoutineViewModel(application: Application) : AndroidViewModel(application)
     fun saveNfcRecord(record: NfcRecord) = repository.upsertNfc(record)
 
     fun deleteNfcRecord(id: String) = repository.deleteNfc(id)
+
+    /** 目前的全域變數名稱清單，供「插入變數」清單顯示可引用的 {{全域:名稱}} */
+    fun globalNames(): List<String> = repository.globals.value.map { it.name }
+
+    /** 管理畫面手動新增／更新一個全域變數 */
+    fun setGlobal(name: String, value: String) = repository.setGlobal(name, value)
+
+    fun deleteGlobal(name: String) = repository.deleteGlobal(name)
 
     /** 是否具備精確鬧鐘權限（Android 12+），否則 UI 顯示降級提示 */
     fun canScheduleExactAlarms(): Boolean =

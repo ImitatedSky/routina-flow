@@ -15,6 +15,15 @@ class RunContext {
 
     /** 觸發情境值（時間/日期/星期/電量，及各觸發提供的通知內容、Wi-Fi 名稱等） */
     val trigger = mutableMapOf<String, String>()
+
+    /**
+     * 全域變數（跨程序、可持久化）：執行開始時由儲存載入，`{{全域:名稱}}` 讀取，
+     * 「設定全域變數」動作寫入並登記到 [dirtyGlobals]，執行結束時只把有異動的鍵落地。
+     */
+    val globals = mutableMapOf<String, String>()
+
+    /** 本次執行有寫入的全域變數名稱；執行結束時據此把異動落地（未動的不寫，避免無謂覆蓋） */
+    val dirtyGlobals = mutableSetOf<String>()
 }
 
 /**
@@ -38,7 +47,8 @@ object VariableResolver {
     val KNOWN_KEYS = setOf(
         "通知標題", "通知內容", "通知來源App",
         "電量", "Wi-Fi名稱", "藍牙裝置", "地點名稱", "標籤名稱",
-        "時間", "日期", "星期"
+        "時間", "日期", "星期",
+        "迴圈:次數"
     )
 
     fun resolve(template: String, ctx: RunContext): String {
@@ -53,6 +63,7 @@ object VariableResolver {
     private fun resolveKey(key: String, ctx: RunContext): String? = when {
         key == "result" -> ctx.lastOutput ?: ""
         key.startsWith("var:") -> ctx.vars[key.removePrefix("var:").trim()] ?: ""
+        key.startsWith("全域:") -> ctx.globals[key.removePrefix("全域:").trim()] ?: ""
         key.startsWith("觸發:") -> ctx.trigger[key.removePrefix("觸發:").trim()] ?: ""
         ctx.trigger.containsKey(key) -> ctx.trigger[key]
         key in KNOWN_KEYS -> ""
@@ -71,7 +82,8 @@ object VariableResolver {
         "Wi-Fi名稱" to "MyWiFi",
         "藍牙裝置" to "我的耳機",
         "地點名稱" to "公司",
-        "標籤名稱" to "床頭標籤"
+        "標籤名稱" to "床頭標籤",
+        "迴圈:次數" to "2"
     )
 
     /**
@@ -88,6 +100,7 @@ object VariableResolver {
     private fun sampleValue(key: String): String? = when {
         key == "result" -> "上一步的結果"
         key.startsWith("var:") -> "「${key.removePrefix("var:").trim()}」的值"
+        key.startsWith("全域:") -> "「${key.removePrefix("全域:").trim()}」的全域值"
         key.startsWith("觸發:") -> sampleValue(key.removePrefix("觸發:").trim()) ?: "…"
         else -> SAMPLE[key]
     }

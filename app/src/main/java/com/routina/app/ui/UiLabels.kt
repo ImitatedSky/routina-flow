@@ -4,6 +4,8 @@ import com.routina.app.engine.RoutineExecutor
 import com.routina.app.model.Action
 import com.routina.app.model.AppTarget
 import com.routina.app.model.BtDevice
+import com.routina.app.model.CompareOp
+import com.routina.app.model.Condition
 import com.routina.app.model.GeoCircle
 import com.routina.app.model.RingerModeType
 import com.routina.app.model.Routine
@@ -11,6 +13,7 @@ import com.routina.app.model.TimeMode
 import com.routina.app.model.Trigger
 import com.routina.app.model.TriggerSource
 import com.routina.app.model.VolumeStream
+import com.routina.app.model.usesRightOperand
 
 /** 星期顯示：ISO-8601（1=週一 … 7=週日） */
 val WEEKDAY_LABELS = listOf("一", "二", "三", "四", "五", "六", "日")
@@ -131,6 +134,15 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.SetAlarm -> "設定鬧鐘"
     is Action.Text -> "文字"
     is Action.SetVariable -> "設定變數"
+    is Action.SetGlobalVariable -> "設定全域變數"
+    is Action.IfBegin -> "如果"
+    is Action.ElseIf -> "否則如果"
+    is Action.Else -> "否則"
+    is Action.EndIf -> "結束如果"
+    is Action.WhileBegin -> "一直重複…當"
+    is Action.EndWhile -> "結束重複"
+    is Action.RepeatBegin -> "重複 N 次"
+    is Action.EndRepeat -> "結束重複 N 次"
 }
 
 /** 動作積木上的標籤文字（參數欄前的敘述） */
@@ -158,6 +170,15 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.SetAlarm -> "設定鬧鐘"
     is Action.Text -> "文字"
     is Action.SetVariable -> "設定變數"
+    is Action.SetGlobalVariable -> "設定全域變數"
+    is Action.IfBegin -> "如果"
+    is Action.ElseIf -> "否則如果"
+    is Action.Else -> "否則"
+    is Action.EndIf -> "結束如果"
+    is Action.WhileBegin -> "當"
+    is Action.EndWhile -> "結束重複"
+    is Action.RepeatBegin -> "重複"
+    is Action.EndRepeat -> "結束重複"
 }
 
 /** 動作積木參數欄的內容 */
@@ -192,6 +213,43 @@ fun actionParamText(action: Action): String = when (action) {
         val value = action.template.flattenLines()
         if (value.isBlank()) name else truncate("$name = $value", 20)
     }
+
+    is Action.SetGlobalVariable -> {
+        val name = action.name.ifBlank { "未命名" }
+        val value = action.template.flattenLines()
+        if (value.isBlank()) name else truncate("$name = $value", 20)
+    }
+
+    is Action.IfBegin -> conditionSummary(action.condition)
+    is Action.ElseIf -> conditionSummary(action.condition)
+    is Action.WhileBegin -> conditionSummary(action.condition)
+    is Action.RepeatBegin -> numParam(action.countExpr, "${action.count} 次")
+    is Action.Else -> "其餘情況"
+    is Action.EndIf, is Action.EndWhile, is Action.EndRepeat -> ""
+}
+
+/** 判斷式的積木參數摘要，例如「電量 > 20」 */
+fun conditionSummary(c: Condition): String =
+    if (c.op.usesRightOperand) {
+        truncate("${c.left.ifBlank { "(空)" }} ${compareOpLabel(c.op)} ${c.right}", 20)
+    } else {
+        truncate("${c.left.ifBlank { "(空)" }} ${compareOpLabel(c.op)}", 20)
+    }
+
+/** 運算子的短標籤（積木參數用；下拉選單另有完整文字，見 ActionEditor） */
+fun compareOpLabel(op: CompareOp): String = when (op) {
+    CompareOp.EQUALS -> "="
+    CompareOp.NOT_EQUALS -> "≠"
+    CompareOp.GREATER -> ">"
+    CompareOp.GREATER_EQUAL -> "≥"
+    CompareOp.LESS -> "<"
+    CompareOp.LESS_EQUAL -> "≤"
+    CompareOp.CONTAINS -> "包含"
+    CompareOp.NOT_CONTAINS -> "不包含"
+    CompareOp.IS_EMPTY -> "為空"
+    CompareOp.IS_NOT_EMPTY -> "不為空"
+    CompareOp.IS_TRUE -> "為真"
+    CompareOp.IS_FALSE -> "為假"
 }
 
 /** 數值參數欄：Expr 非空顯示 Expr（數字或截斷後的 `{{...}}`），否則顯示原本的整數文字 */

@@ -88,6 +88,9 @@ object RoutinaColors {
     val ActionText = Color(0xFF546E7A)
     val ActionSetVariable = Color(0xFF67818C)
 
+    // ---------- 動作：流程控制（棕，與判斷/迴圈語意區隔於其他家族） ----------
+    val ActionControl = Color(0xFF6D4C41)
+
     // ---------- 執行結果 ----------
     val Success = Color(0xFF2E7D32)
     val Failure = Color(0xFFC62828)
@@ -148,6 +151,10 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.Clipboard -> RoutinaColors.ActionClipboard
     is Action.Text -> RoutinaColors.ActionText
     is Action.SetVariable -> RoutinaColors.ActionSetVariable
+    is Action.SetGlobalVariable -> RoutinaColors.ActionSetVariable
+    is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
+    is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
+    is Action.EndRepeat -> RoutinaColors.ActionControl
 }
 
 /** 方塊主色：優先用使用者自訂的 [Routine.color]，否則用觸發家族色 */

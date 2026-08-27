@@ -32,12 +32,15 @@ import com.routina.app.RoutinaApp
 import com.routina.app.data.RoutineRepository
 import com.routina.app.model.Action
 import com.routina.app.model.ActionResult
+import com.routina.app.model.CompareOp
+import com.routina.app.model.Condition
 import com.routina.app.model.RingerModeType
 import com.routina.app.model.Routine
 import com.routina.app.model.RunLog
 import com.routina.app.model.Trigger
 import com.routina.app.model.TriggerSource
 import com.routina.app.model.VolumeStream
+import com.routina.app.model.usesRightOperand
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -97,6 +100,29 @@ object RoutineExecutor {
         triggerContext: Map<String, String> = emptyMap()
     ): RunLog {
         val appContext = context.applicationContext
+        val repository = RoutineRepository.get(appContext)
+
+        // 觸發生命週期：非手動觸發才受「觸發上限次數 / 結束日期」限制。
+        // 已達期限（排程可能還沒被拆掉又觸發了）→ 自動停用並跳過這次執行，不跑動作。
+        if (source != TriggerSource.MANUAL) {
+            val now = System.currentTimeMillis()
+            val expired = routine.expiresAt?.let { now >= it } == true
+            val maxed = routine.maxRuns?.let { routine.runCount >= it } == true
+            if (expired || maxed) {
+                RoutineManager.setEnabled(appContext, routine.id, false)
+                val why = if (expired) "已到結束日期" else "已達觸發次數上限"
+                val skipLog = RunLog(
+                    routineId = routine.id,
+                    routineName = routine.name,
+                    source = source,
+                    results = emptyList(),
+                    note = "$why，未執行並已自動停用"
+                )
+                if (persistBlocking) repository.addLogBlocking(skipLog) else repository.addLog(skipLog)
+                return skipLog
+            }
+        }
+
         // Android 10+ 起，從 Receiver / Service 呼叫 startActivity 會被系統靜默丟棄
         // （不丟例外）。只有下列情境能真正把 Activity 帶到前景：
         // 手動執行、由 Activity context 呼叫、或已取得「顯示在其他應用程式上層」權限。
@@ -111,13 +137,33 @@ object RoutineExecutor {
             trigger.putAll(commonTriggerValues(appContext))
             trigger.putAll(triggerContextFromRoutine(routine.trigger))
             trigger.putAll(triggerContext)
+            // 全域變數在執行開始時載入，`{{全域:名稱}}` 讀得到；期間的寫入結束時才落地
+            globals.putAll(repository.globalsSnapshot())
         }
 
-        val results = routine.actions.mapIndexed { index, action ->
-            runAction(
-                appContext, routine, index, action, source, canLaunchActivity, allowWait,
-                fgsSwitch, ctx
-            )
+        // 動作以直譯器執行（支援 如果／否則／while／重複 的流程控制）；扁平清單用配對標記表達層級。
+        val results = mutableListOf<ActionResult>()
+        val budget = intArrayOf(Action.MAX_ACTIONS_PER_RUN)
+        runProgram(
+            routine.actions, 0, routine.actions.size,
+            appContext, routine, source, canLaunchActivity, allowWait, fgsSwitch, ctx,
+            results, budget
+        )
+
+        // 這次執行若有寫入全域變數，只把有異動的鍵合併落地（背景執行同步寫入以防行程結束）
+        if (ctx.dirtyGlobals.isNotEmpty()) {
+            repository.applyGlobals(ctx.globals.filterKeys { it in ctx.dirtyGlobals }, persistBlocking)
+        }
+
+        // 觸發執行完成 → 記一次數；達上限或已過期就自動停用（setEnabled 連帶取消排程/監測）
+        if (source != TriggerSource.MANUAL) {
+            repository.incrementRunCount(routine.id, persistBlocking)
+            val newCount = routine.runCount + 1
+            val reachedMax = routine.maxRuns?.let { newCount >= it } == true
+            val nowExpired = routine.expiresAt?.let { System.currentTimeMillis() >= it } == true
+            if (reachedMax || nowExpired) {
+                RoutineManager.setEnabled(appContext, routine.id, false)
+            }
         }
 
         val log = RunLog(
@@ -127,10 +173,186 @@ object RoutineExecutor {
             results = results,
             note = note
         )
-        val repository = RoutineRepository.get(appContext)
         if (persistBlocking) repository.addLogBlocking(log) else repository.addLog(log)
         return log
     }
+
+    /**
+     * 流程控制直譯器：以游標走 [actions] 的 [from, to) 區間，遇到配對標記就分支／回跳。
+     * 巢狀以遞迴處理；對不成對的標記保持穩健（未關閉的區塊延伸到範圍尾），並以 [budget] 擋失控。
+     */
+    private suspend fun runProgram(
+        actions: List<Action>,
+        from: Int,
+        to: Int,
+        context: Context,
+        routine: Routine,
+        source: TriggerSource,
+        canLaunchActivity: Boolean,
+        allowWait: Boolean,
+        fgsSwitch: ForegroundTypeSwitch?,
+        ctx: RunContext,
+        results: MutableList<ActionResult>,
+        budget: IntArray
+    ) {
+        var i = from
+        while (i < to) {
+            if (budget[0] <= 0) {
+                results.add(ActionResult("已達單次執行的動作上限，流程中止", false, "action budget exceeded"))
+                return
+            }
+            when (val action = actions[i]) {
+                is Action.IfBegin -> {
+                    val end = matchingEnd(actions, i, to)
+                    runIfBranches(
+                        actions, i, end, context, routine, source, canLaunchActivity,
+                        allowWait, fgsSwitch, ctx, results, budget
+                    )
+                    i = end + 1
+                }
+
+                is Action.WhileBegin -> {
+                    val end = matchingEnd(actions, i, to)
+                    val saved = ctx.trigger[LOOP_INDEX_KEY]
+                    var guard = 0
+                    while (guard < Action.WHILE_MAX_ITERATIONS && budget[0] > 0 &&
+                        ConditionEvaluator.eval(action.condition, ctx)
+                    ) {
+                        ctx.trigger[LOOP_INDEX_KEY] = (guard + 1).toString()
+                        runProgram(
+                            actions, i + 1, end, context, routine, source, canLaunchActivity,
+                            allowWait, fgsSwitch, ctx, results, budget
+                        )
+                        guard++
+                    }
+                    if (guard >= Action.WHILE_MAX_ITERATIONS) {
+                        results.add(
+                            ActionResult("while 迴圈達 ${Action.WHILE_MAX_ITERATIONS} 次上限，已中止", false, "while limit")
+                        )
+                    }
+                    restoreLoopIndex(ctx, saved)
+                    i = end + 1
+                }
+
+                is Action.RepeatBegin -> {
+                    val end = matchingEnd(actions, i, to)
+                    val count = resolveRepeatCount(action, ctx)
+                    val saved = ctx.trigger[LOOP_INDEX_KEY]
+                    var k = 0
+                    while (k < count && budget[0] > 0) {
+                        ctx.trigger[LOOP_INDEX_KEY] = (k + 1).toString()
+                        runProgram(
+                            actions, i + 1, end, context, routine, source, canLaunchActivity,
+                            allowWait, fgsSwitch, ctx, results, budget
+                        )
+                        k++
+                    }
+                    restoreLoopIndex(ctx, saved)
+                    i = end + 1
+                }
+
+                // 直接走到的孤立標記（正常流程下配對跳轉不會停在這）→ 略過
+                is Action.ElseIf, is Action.Else, is Action.EndIf,
+                is Action.EndWhile, is Action.EndRepeat -> i++
+
+                else -> {
+                    budget[0]--
+                    results.add(
+                        runAction(
+                            context, routine, i, action, source, canLaunchActivity,
+                            allowWait, fgsSwitch, ctx
+                        )
+                    )
+                    i++
+                }
+            }
+        }
+    }
+
+    /** 執行一個 如果 區塊：依序評估 IfBegin／各 ElseIf／Else，只執行第一個成立分支的 body */
+    private suspend fun runIfBranches(
+        actions: List<Action>,
+        ifStart: Int,
+        ifEnd: Int,
+        context: Context,
+        routine: Routine,
+        source: TriggerSource,
+        canLaunchActivity: Boolean,
+        allowWait: Boolean,
+        fgsSwitch: ForegroundTypeSwitch?,
+        ctx: RunContext,
+        results: MutableList<ActionResult>,
+        budget: IntArray
+    ) {
+        var marker = ifStart
+        while (marker < ifEnd) {
+            val take = when (val m = actions[marker]) {
+                is Action.IfBegin -> ConditionEvaluator.eval(m.condition, ctx)
+                is Action.ElseIf -> ConditionEvaluator.eval(m.condition, ctx)
+                is Action.Else -> true
+                else -> false
+            }
+            val next = nextBranchOrEnd(actions, marker, ifEnd)
+            if (take) {
+                runProgram(
+                    actions, marker + 1, next, context, routine, source, canLaunchActivity,
+                    allowWait, fgsSwitch, ctx, results, budget
+                )
+                return
+            }
+            marker = next
+        }
+    }
+
+    /** 從 [start] 起找同層的配對結束標記（任一種 End）；找不到（未關閉）回傳 [to] */
+    private fun matchingEnd(actions: List<Action>, start: Int, to: Int): Int {
+        var depth = 0
+        var j = start + 1
+        while (j < to) {
+            when (actions[j]) {
+                is Action.IfBegin, is Action.WhileBegin, is Action.RepeatBegin -> depth++
+                is Action.EndIf, is Action.EndWhile, is Action.EndRepeat ->
+                    if (depth == 0) return j else depth--
+
+                else -> {}
+            }
+            j++
+        }
+        return to
+    }
+
+    /** 從 [from] 起找同層的下一個分支標記（ElseIf／Else）或結束標記；找不到回傳 [to] */
+    private fun nextBranchOrEnd(actions: List<Action>, from: Int, to: Int): Int {
+        var depth = 0
+        var j = from + 1
+        while (j < to) {
+            when (actions[j]) {
+                is Action.IfBegin, is Action.WhileBegin, is Action.RepeatBegin -> depth++
+                is Action.EndIf, is Action.EndWhile, is Action.EndRepeat ->
+                    if (depth == 0) return j else depth--
+
+                is Action.ElseIf, is Action.Else -> if (depth == 0) return j
+                else -> {}
+            }
+            j++
+        }
+        return to
+    }
+
+    /** 重複 N 次的次數：countExpr 非空先變數解析，夾在安全範圍內 */
+    private fun resolveRepeatCount(action: Action.RepeatBegin, ctx: RunContext): Int {
+        val n = if (action.countExpr.isBlank()) action.count
+        else VariableResolver.resolve(action.countExpr, ctx).trim().toIntOrNull() ?: action.count
+        return n.coerceIn(Action.REPEAT_COUNT_SAFE)
+    }
+
+    /** 迴圈結束後還原 {{迴圈:次數}}（支援巢狀：還原成外層的值，最外層則移除） */
+    private fun restoreLoopIndex(ctx: RunContext, saved: String?) {
+        if (saved != null) ctx.trigger[LOOP_INDEX_KEY] = saved else ctx.trigger.remove(LOOP_INDEX_KEY)
+    }
+
+    /** 迴圈計數在情境中的鍵；以 {{迴圈:次數}} 引用 */
+    private const val LOOP_INDEX_KEY = "迴圈:次數"
 
     /**
      * 執行單一動作。動作函式回傳非 null 字串時視為補充說明，
@@ -175,6 +397,11 @@ object RoutineExecutor {
                 is Action.SetAlarm -> doSetAlarm(context, routine, index, resolved, canLaunchActivity)
                 is Action.Text -> doText(resolved, ctx)
                 is Action.SetVariable -> doSetVariable(resolved, ctx)
+                is Action.SetGlobalVariable -> doSetGlobalVariable(resolved, ctx)
+                // 流程控制標記由直譯器 runProgram 處理；走到這裡代表是孤立標記 → 不做事
+                is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
+                is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
+                is Action.EndRepeat -> null
             }
             ActionResult(if (note == null) description else "$description（$note）", true)
         } catch (t: Throwable) {
@@ -205,6 +432,9 @@ object RoutineExecutor {
         is Action.SetAlarm -> action.copy(label = VariableResolver.resolve(action.label, ctx))
         is Action.Text -> action.copy(template = VariableResolver.resolve(action.template, ctx))
         is Action.SetVariable ->
+            action.copy(template = VariableResolver.resolve(action.template, ctx))
+
+        is Action.SetGlobalVariable ->
             action.copy(template = VariableResolver.resolve(action.template, ctx))
 
         else -> action
@@ -735,6 +965,18 @@ object RoutineExecutor {
         return null
     }
 
+    /**
+     * 設定全域變數：把（已代入變數的）值寫入全域情境並登記異動，
+     * 執行結束時由 [execute] 落地保存，供任何程序以 {{全域:名稱}} 引用。
+     */
+    private fun doSetGlobalVariable(action: Action.SetGlobalVariable, ctx: RunContext): String? {
+        val name = action.name.trim()
+        if (name.isBlank()) error("未設定全域變數名稱")
+        ctx.globals[name] = action.template
+        ctx.dirtyGlobals += name
+        return null
+    }
+
     /** 相機權限檢查；未授權時發引導通知並中止這個動作 */
     private fun requireCameraPermission(context: Context) {
         if (!hasSelfPermission(context, Manifest.permission.CAMERA)) {
@@ -1174,6 +1416,42 @@ object RoutineExecutor {
         is Action.Text -> "文字：${redactText(action.template)}"
         is Action.SetVariable ->
             "設定變數 ${action.name.ifBlank { "(未命名)" }}：${redactText(action.template)}"
+
+        is Action.SetGlobalVariable ->
+            "設定全域變數 ${action.name.ifBlank { "(未命名)" }}：${redactText(action.template)}"
+
+        is Action.IfBegin -> "如果 ${describeCondition(action.condition)}"
+        is Action.ElseIf -> "否則如果 ${describeCondition(action.condition)}"
+        is Action.Else -> "否則"
+        is Action.EndIf -> "結束如果"
+        is Action.WhileBegin -> "一直重複…當 ${describeCondition(action.condition)}"
+        is Action.EndWhile -> "結束重複"
+        is Action.RepeatBegin -> "重複 ${numLabel(action.countExpr, action.count)} 次"
+        is Action.EndRepeat -> "結束重複 N 次"
+    }
+
+    /** 判斷式的簡短描述（給紀錄／積木用），例如「電量 > 20」 */
+    private fun describeCondition(c: Condition): String =
+        if (c.op.usesRightOperand) {
+            "${c.left.ifBlank { "(空)" }} ${compareOpSymbol(c.op)} ${c.right}"
+        } else {
+            "${c.left.ifBlank { "(空)" }} ${compareOpSymbol(c.op)}"
+        }
+
+    /** 運算子的符號／簡短文字 */
+    private fun compareOpSymbol(op: CompareOp): String = when (op) {
+        CompareOp.EQUALS -> "="
+        CompareOp.NOT_EQUALS -> "≠"
+        CompareOp.GREATER -> ">"
+        CompareOp.GREATER_EQUAL -> "≥"
+        CompareOp.LESS -> "<"
+        CompareOp.LESS_EQUAL -> "≤"
+        CompareOp.CONTAINS -> "包含"
+        CompareOp.NOT_CONTAINS -> "不包含"
+        CompareOp.IS_EMPTY -> "為空"
+        CompareOp.IS_NOT_EMPTY -> "不為空"
+        CompareOp.IS_TRUE -> "為真"
+        CompareOp.IS_FALSE -> "為假"
     }
 
     /** 數值參數的顯示：expr 非空顯示 expr（數字或 {{...}}），否則顯示原本的整數值 */

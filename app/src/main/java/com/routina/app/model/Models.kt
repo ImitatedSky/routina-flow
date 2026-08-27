@@ -546,6 +546,62 @@ sealed class Action {
         val template: String = ""
     ) : Action()
 
+    /**
+     * 設定全域變數：把一段（可含變數 token 的）文字解析後存成**跨程序、可持久化**的全域變數，
+     * 之後任何程序都能以 `{{全域:名稱}}` 引用。與 [SetVariable]（只存活於單次執行）不同，
+     * 全域變數寫入後會落地保存（見 [com.routina.app.data.RoutineRepository.applyGlobals]）。
+     */
+    @Serializable
+    @SerialName("set_global")
+    data class SetGlobalVariable(
+        val name: String = "",
+        val template: String = ""
+    ) : Action()
+
+    // ---- 流程控制（配對標記）----
+    // 扁平清單用配對的 begin/end 標記表達層級，由 RoutineExecutor 的直譯器解讀；
+    // dispatch 時皆為 no-op（流程由直譯器處理）。對不成對的標記直譯器保持穩健、不崩潰。
+
+    /** 如果：[condition] 成立才執行到下一個 否則如果／否則／結束如果 之間的動作 */
+    @Serializable
+    @SerialName("if_begin")
+    data class IfBegin(val condition: Condition = Condition()) : Action()
+
+    /** 否則如果：前面的條件都不成立且 [condition] 成立時執行 */
+    @Serializable
+    @SerialName("else_if")
+    data class ElseIf(val condition: Condition = Condition()) : Action()
+
+    /** 否則：前面的條件都不成立時執行 */
+    @Serializable
+    @SerialName("else")
+    data object Else : Action()
+
+    /** 結束如果 */
+    @Serializable
+    @SerialName("end_if")
+    data object EndIf : Action()
+
+    /** 一直重複…當：只要 [condition] 成立就重複執行到 結束重複 之間的動作（有次數上限保護） */
+    @Serializable
+    @SerialName("while_begin")
+    data class WhileBegin(val condition: Condition = Condition()) : Action()
+
+    /** 結束重複（對應 一直重複…當） */
+    @Serializable
+    @SerialName("end_while")
+    data object EndWhile : Action()
+
+    /** 重複 N 次：[countExpr] 非空則以變數解析出次數，否則用 [count]。以 {{迴圈:次數}} 取得目前第幾次 */
+    @Serializable
+    @SerialName("repeat_begin")
+    data class RepeatBegin(val count: Int = 3, val countExpr: String = "") : Action()
+
+    /** 結束重複 N 次 */
+    @Serializable
+    @SerialName("end_repeat")
+    data object EndRepeat : Action()
+
     companion object {
         const val METHOD_GET = "GET"
         const val METHOD_POST = "POST"
@@ -567,6 +623,11 @@ sealed class Action {
         val RECORD_SECONDS_SAFE = 1..3600
         val PERCENT_SAFE = 0..100
 
+        /** 流程控制安全上限：擋掉無限迴圈與失控的巢狀執行 */
+        val REPEAT_COUNT_SAFE = 0..10000
+        const val WHILE_MAX_ITERATIONS = 10000
+        const val MAX_ACTIONS_PER_RUN = 100000
+
         /** 播放音效的系統音效類型 */
         const val SOUND_NOTIFICATION = "NOTIFICATION"
         const val SOUND_ALARM = "ALARM"
@@ -574,6 +635,51 @@ sealed class Action {
         val SOUND_TYPES = listOf(SOUND_NOTIFICATION, SOUND_ALARM, SOUND_RINGTONE)
     }
 }
+
+/**
+ * 一個全域變數（跨程序、可持久化）。以 [name] 為唯一鍵，[value] 為目前的值。
+ * 由「設定全域變數」動作寫入，或在全域變數管理畫面手動編輯；以 `{{全域:名稱}}` 引用。
+ */
+@Serializable
+data class GlobalVar(
+    val name: String,
+    val value: String = "",
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+/**
+ * 流程控制的判斷式：`左 [運算子] 右`。[left]／[right] 都可含變數 token，執行時先解析再比較
+ * （見 [com.routina.app.engine.ConditionEvaluator]）。空條件（皆空、EQUALS）＝恆成立。
+ */
+@Serializable
+data class Condition(
+    val left: String = "",
+    val op: CompareOp = CompareOp.EQUALS,
+    val right: String = ""
+)
+
+/** 判斷式的運算子。EMPTY／NOT_EMPTY 只看 [Condition.left]（忽略 right）。 */
+@Serializable
+enum class CompareOp {
+    @SerialName("eq") EQUALS,
+    @SerialName("neq") NOT_EQUALS,
+    @SerialName("gt") GREATER,
+    @SerialName("gte") GREATER_EQUAL,
+    @SerialName("lt") LESS,
+    @SerialName("lte") LESS_EQUAL,
+    @SerialName("contains") CONTAINS,
+    @SerialName("not_contains") NOT_CONTAINS,
+    @SerialName("empty") IS_EMPTY,
+    @SerialName("not_empty") IS_NOT_EMPTY,
+    @SerialName("true") IS_TRUE,
+    @SerialName("false") IS_FALSE
+}
+
+/** 是否需要右值：為空／不為空／為真／為假只看左值，UI 會隱藏右值欄、顯示時也省略右值 */
+val CompareOp.usesRightOperand: Boolean
+    get() = this !in setOf(
+        CompareOp.IS_EMPTY, CompareOp.IS_NOT_EMPTY, CompareOp.IS_TRUE, CompareOp.IS_FALSE
+    )
 
 @Serializable
 enum class RingerModeType {
@@ -618,6 +724,12 @@ data class Routine(
     val actions: List<Action> = emptyList(),
     /** 自訂方塊顏色（ARGB）；null＝依觸發家族色（舊資料相容） */
     val color: Int? = null,
+    /** 觸發上限次數；null＝無限（舊資料相容）。達到後自動停用。手動測試不計入。 */
+    val maxRuns: Int? = null,
+    /** 已由觸發實際執行的次數（手動測試不計）。用來與 [maxRuns] 比對。 */
+    val runCount: Int = 0,
+    /** 結束日期（epoch millis）；到期後不再觸發並自動停用。null＝無期限（舊資料相容）。 */
+    val expiresAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis()
 ) {
     /** AlarmManager PendingIntent 的 requestCode：由 id 推導，穩定且不衝突。 */

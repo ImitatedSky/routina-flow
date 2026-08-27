@@ -125,7 +125,17 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
         listOf(Action.TakePhoto(), Action.BurstPhoto(), Action.RecordAudio())
     ),
     PaletteGroup("流程", listOf(Action.Wait(), Action.Clipboard())),
-    PaletteGroup("變數", listOf(Action.Text(), Action.SetVariable()))
+    PaletteGroup("變數", listOf(Action.Text(), Action.SetVariable(), Action.SetGlobalVariable())),
+    PaletteGroup(
+        "流程控制",
+        listOf(
+            Action.IfBegin(),
+            Action.ElseIf(),
+            Action.Else,
+            Action.WhileBegin(),
+            Action.RepeatBegin()
+        )
+    )
 )
 
 private const val NO_GMS_HINT =

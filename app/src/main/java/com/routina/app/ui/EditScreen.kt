@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -40,6 +41,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,11 +53,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TimePickerLayoutType
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -73,6 +78,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -83,6 +89,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
 import com.routina.app.engine.BtAclReceiver
 import com.routina.app.engine.GeofenceManager
 import com.routina.app.engine.NfcTagReader
@@ -331,6 +341,19 @@ fun EditScreen(
         )
     }
 
+    // 取消剛插入的新積木；若是流程控制的「開始」標記，連同成對的「結束」標記一起移除
+    fun removeNewBlock(index: Int) {
+        val actions = draft.actions
+        if (index !in actions.indices) return
+        val endIdx = matchingEndInList(actions, index)
+        draft = draft.copy(
+            actions = actions.toMutableList().apply {
+                if (endIdx != null && endIdx > index) removeAt(endIdx)
+                removeAt(index)
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -447,6 +470,8 @@ fun EditScreen(
                 // 每塊動作前面帶一個插入點（「＋」），點它就把新動作插入該索引；
                 // 第一塊前的插入點＝插到最前（清單開頭）。
                 if (draft.actions.isNotEmpty()) {
+                    // 流程控制的巢狀層級 → 縮排呈現（如果／迴圈內的動作往右縮一層）
+                    val indentLevels = indentDepths(draft.actions)
                     ReorderableColumn(
                         list = draft.actions,
                         onSettle = { from, to -> moveAction(from, to) },
@@ -457,7 +482,9 @@ fun EditScreen(
                         // 捕捉 ReorderableScope；包一層 Column 後 this 會變成 ColumnScope
                         val reorderScope = this
                         Column(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = (indentLevels.getOrElse(index) { 0 } * 20).dp),
                             verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             InsertPoint(onClick = {
@@ -482,6 +509,14 @@ fun EditScreen(
                     showActionPalette = true
                 })
             }
+
+            Spacer(Modifier.height(20.dp))
+            TriggerLimitSection(
+                routine = draft,
+                onMaxRunsChange = { draft = draft.copy(maxRuns = it) },
+                onExpiresAtChange = { draft = draft.copy(expiresAt = it) },
+                onResetCount = { draft = draft.copy(runCount = 0) }
+            )
 
             // 缺背景位置權限時的引導：Android 10 可直接請求，11+ 只能導到 App 設定頁
             if (locationCircle != null && playServicesAvailable && !hasBackgroundLocation) {
@@ -580,12 +615,17 @@ fun EditScreen(
             onPick = { template ->
                 showActionPalette = false
                 // 插入到選定的位置（插入點指定的索引；幽靈積木為 null＝加到最後），
-                // 再立即開啟參數編輯；取消時會移除這塊新積木
+                // 再立即開啟參數編輯；取消時會移除這塊新積木（連同成對的結束標記）
                 val index = (insertIndex ?: draft.actions.size)
                     .coerceIn(0, draft.actions.size)
                 insertIndex = null
+                // 流程控制的「開始」標記成對插入其「結束」標記，區塊天生完整；body 用中間插入點加入
+                val end = pairedEnd(template)
                 draft = draft.copy(
-                    actions = draft.actions.toMutableList().apply { add(index, template) }
+                    actions = draft.actions.toMutableList().apply {
+                        add(index, template)
+                        if (end != null) add(index + 1, end)
+                    }
                 )
                 editingAction = IndexedAction(index, template, isNew = true)
             },
@@ -602,6 +642,8 @@ fun EditScreen(
             trigger = draft.trigger,
             // 只有排在這個動作之前的動作才可能提供變數（設定變數）
             precedingActions = draft.actions.take(target.index),
+            // 已存在的全域變數也可被引用（{{全域:名稱}}）
+            globalNames = viewModel.globalNames(),
             onConfirm = { updated ->
                 if (target.index in draft.actions.indices) {
                     draft = draft.copy(
@@ -612,7 +654,7 @@ fun EditScreen(
                 editingAction = null
             },
             onDismiss = {
-                if (target.isNew) removeAction(target.index)
+                if (target.isNew) removeNewBlock(target.index)
                 editingAction = null
             }
         )
@@ -880,13 +922,190 @@ private fun RoutinePreview(routine: Routine) {
     }
 }
 
+/** 流程控制「開始」標記對應的「結束」標記；非開始標記回 null */
+private fun pairedEnd(action: Action): Action? = when (action) {
+    is Action.IfBegin -> Action.EndIf
+    is Action.WhileBegin -> Action.EndWhile
+    is Action.RepeatBegin -> Action.EndRepeat
+    else -> null
+}
+
+/** 若 [index] 是流程控制的開始標記，回傳其同層配對結束標記的索引；否則 null */
+private fun matchingEndInList(actions: List<Action>, index: Int): Int? {
+    val begin = actions.getOrNull(index) ?: return null
+    if (pairedEnd(begin) == null) return null
+    var depth = 0
+    var j = index + 1
+    while (j < actions.size) {
+        when (actions[j]) {
+            is Action.IfBegin, is Action.WhileBegin, is Action.RepeatBegin -> depth++
+            is Action.EndIf, is Action.EndWhile, is Action.EndRepeat ->
+                if (depth == 0) return j else depth--
+
+            else -> {}
+        }
+        j++
+    }
+    return null
+}
+
+/** 每個動作的縮排層級，讓流程控制的巢狀結構在畫面上呈現出來 */
+private fun indentDepths(actions: List<Action>): List<Int> {
+    var depth = 0
+    return actions.map { a ->
+        when (a) {
+            is Action.IfBegin, is Action.WhileBegin, is Action.RepeatBegin -> depth++
+            is Action.EndIf, is Action.EndWhile, is Action.EndRepeat -> {
+                depth = (depth - 1).coerceAtLeast(0)
+                depth
+            }
+
+            is Action.ElseIf, is Action.Else -> (depth - 1).coerceAtLeast(0)
+            else -> depth
+        }
+    }
+}
+
 /** 內容是否相同（忽略 id 與建立時間），用來判斷編輯畫面有沒有未儲存的變更 */
 private fun Routine.contentEquals(other: Routine): Boolean =
     name == other.name &&
         enabled == other.enabled &&
         trigger == other.trigger &&
         actions == other.actions &&
-        color == other.color
+        color == other.color &&
+        maxRuns == other.maxRuns &&
+        runCount == other.runCount &&
+        expiresAt == other.expiresAt
+
+/**
+ * 觸發限制（選用）：設定「最多觸發幾次」與「觸發到哪一天」，達到後自動停用此程序。
+ * 手動測試不計入次數。改動任一項都會被 [contentEquals] 視為未儲存變更。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TriggerLimitSection(
+    routine: Routine,
+    onMaxRunsChange: (Int?) -> Unit,
+    onExpiresAtChange: (Long?) -> Unit,
+    onResetCount: () -> Unit
+) {
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+            .padding(16.dp)
+    ) {
+        Text(
+            "觸發限制（選用）",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "達到次數或結束日期後，會自動停用此程序。手動測試不計入次數。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text("限制觸發次數", modifier = Modifier.weight(1f))
+            Switch(
+                checked = routine.maxRuns != null,
+                onCheckedChange = { on -> onMaxRunsChange(if (on) (routine.maxRuns ?: 1) else null) }
+            )
+        }
+        if (routine.maxRuns != null) {
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = routine.maxRuns.toString(),
+                onValueChange = { text ->
+                    val n = text.filter { it.isDigit() }.take(6).toIntOrNull()
+                    onMaxRunsChange((n ?: 1).coerceAtLeast(1))
+                },
+                label = { Text("最多觸發次數") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "已觸發 ${routine.runCount} / ${routine.maxRuns} 次",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                if (routine.runCount > 0) {
+                    TextButton(onClick = onResetCount) { Text("重設次數") }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text("設定結束日期", modifier = Modifier.weight(1f))
+            Switch(
+                checked = routine.expiresAt != null,
+                onCheckedChange = { on ->
+                    onExpiresAtChange(if (on) (routine.expiresAt ?: defaultExpiry()) else null)
+                }
+            )
+        }
+        if (routine.expiresAt != null) {
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("觸發到 ${formatExpiryDate(routine.expiresAt)}（含當日）")
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = routine.expiresAt?.let { expiryToUtcMidnight(it) }
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { onExpiresAtChange(utcMidnightToEndOfLocalDay(it)) }
+                    showDatePicker = false
+                }) { Text("確定") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("取消") }
+            }
+        ) {
+            DatePicker(state = state)
+        }
+    }
+}
+
+/** 預設結束日期：從今天起 7 天後的當地日終 */
+private fun defaultExpiry(): Long =
+    LocalDate.now().plusDays(7)
+        .atTime(23, 59, 59).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+/** 顯示用：把 expiresAt 轉成當地日期 YYYY/MM/DD */
+private fun formatExpiryDate(expiresAt: Long): String {
+    val d = Instant.ofEpochMilli(expiresAt).atZone(ZoneId.systemDefault()).toLocalDate()
+    return "${d.year}/${d.monthValue}/${d.dayOfMonth}"
+}
+
+/** DatePicker 以 UTC 運作：把 expiresAt（當地日終）換成該日期的 UTC 午夜，供初始選取 */
+private fun expiryToUtcMidnight(expiresAt: Long): Long {
+    val d = Instant.ofEpochMilli(expiresAt).atZone(ZoneId.systemDefault()).toLocalDate()
+    return d.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+}
+
+/** DatePicker 回傳所選日期的 UTC 午夜；換成當地日終（含整天）存成 expiresAt */
+private fun utcMidnightToEndOfLocalDay(utcMidnight: Long): Long {
+    val d = Instant.ofEpochMilli(utcMidnight).atZone(ZoneOffset.UTC).toLocalDate()
+    return d.atTime(23, 59, 59).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+}
 
 /** 方塊顏色挑選（放在 ⋯ 選單的對話框內）：「依觸發」預設 + 一排預選色，設定 [Routine.color] */
 @OptIn(ExperimentalLayoutApi::class)

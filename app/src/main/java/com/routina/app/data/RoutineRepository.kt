@@ -1,6 +1,7 @@
 package com.routina.app.data
 
 import android.content.Context
+import com.routina.app.model.GlobalVar
 import com.routina.app.model.NfcRecord
 import com.routina.app.model.Routine
 import com.routina.app.model.RunLog
@@ -41,6 +42,7 @@ class RoutineRepository private constructor(context: Context) {
     private val routinesFile: File get() = File(appContext.filesDir, FILE_ROUTINES)
     private val logsFile: File get() = File(appContext.filesDir, FILE_LOGS)
     private val nfcFile: File get() = File(appContext.filesDir, FILE_NFC)
+    private val globalsFile: File get() = File(appContext.filesDir, FILE_GLOBALS)
 
     private val _routines = MutableStateFlow<List<Routine>>(emptyList())
     val routines: StateFlow<List<Routine>> = _routines.asStateFlow()
@@ -51,11 +53,15 @@ class RoutineRepository private constructor(context: Context) {
     private val _nfcTags = MutableStateFlow<List<NfcRecord>>(emptyList())
     val nfcTags: StateFlow<List<NfcRecord>> = _nfcTags.asStateFlow()
 
+    private val _globals = MutableStateFlow<List<GlobalVar>>(emptyList())
+    val globals: StateFlow<List<GlobalVar>> = _globals.asStateFlow()
+
     init {
         // 資料量小（數十筆），初始化時同步載入，讓 UI 與背景元件第一幀就有正確資料
         _routines.value = readList(routinesFile, ListSerializer(Routine.serializer()))
         _logs.value = readList(logsFile, ListSerializer(RunLog.serializer()))
         _nfcTags.value = readList(nfcFile, ListSerializer(NfcRecord.serializer()))
+        _globals.value = readList(globalsFile, ListSerializer(GlobalVar.serializer()))
     }
 
     // ---------- 讀取 ----------
@@ -103,6 +109,23 @@ class RoutineRepository private constructor(context: Context) {
         upsert(target.copy(enabled = enabled))
     }
 
+    /**
+     * 觸發實際執行一次後把該 routine 的 [Routine.runCount] +1 並落地。
+     * [blocking] 為 true（背景執行後行程可能立即結束）時同步寫檔，確保次數不會漏記而導致超額觸發。
+     */
+    fun incrementRunCount(id: String, blocking: Boolean) {
+        val current = _routines.value
+        val idx = current.indexOfFirst { it.id == id }
+        if (idx < 0) return
+        val updated = current[idx].copy(runCount = current[idx].runCount + 1)
+        _routines.value = current.toMutableList().apply { this[idx] = updated }
+        if (blocking) {
+            runBlocking { writeMutex.withLock { writeAtomically(routinesFile, encodeRoutines(_routines.value)) } }
+        } else {
+            persistRoutines()
+        }
+    }
+
     // ---------- 執行紀錄 ----------
 
     fun addLog(log: RunLog) {
@@ -133,6 +156,40 @@ class RoutineRepository private constructor(context: Context) {
         persistNfc()
     }
 
+    // ---------- 全域變數（跨程序、可持久化）----------
+
+    /** 目前全域變數的名稱→值對照，供執行開始時載入 [com.routina.app.engine.RunContext] */
+    fun globalsSnapshot(): Map<String, String> =
+        _globals.value.associate { it.name to it.value }
+
+    /**
+     * 把一次執行寫入的全域變數（[changed]：名稱→值）合併落地。
+     *
+     * 只更新有異動的鍵、保留其餘，避免兩個程序同時執行時互相覆蓋。空名稱略過。
+     * [blocking] 為 true（背景執行後行程可能立即結束）時同步寫檔確保落地，否則交背景寫入。
+     */
+    fun applyGlobals(changed: Map<String, String>, blocking: Boolean) {
+        val clean = changed.mapKeys { it.key.trim() }.filterKeys { it.isNotEmpty() }
+        if (clean.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val merged = _globals.value.associateBy { it.name }.toMutableMap()
+        clean.forEach { (name, value) -> merged[name] = GlobalVar(name, value, now) }
+        _globals.value = merged.values.sortedBy { it.name }
+        if (blocking) {
+            runBlocking { writeMutex.withLock { writeAtomically(globalsFile, encodeGlobals(_globals.value)) } }
+        } else {
+            persistGlobals()
+        }
+    }
+
+    /** 管理畫面手動新增／更新一個全域變數（非同步落地） */
+    fun setGlobal(name: String, value: String) = applyGlobals(mapOf(name to value), blocking = false)
+
+    fun deleteGlobal(name: String) {
+        _globals.value = _globals.value.filterNot { it.name == name }
+        persistGlobals()
+    }
+
     // ---------- 寫入 ----------
 
     /**
@@ -159,6 +216,12 @@ class RoutineRepository private constructor(context: Context) {
         }
     }
 
+    private fun persistGlobals() {
+        scope.launch {
+            writeMutex.withLock { writeAtomically(globalsFile, encodeGlobals(_globals.value)) }
+        }
+    }
+
     private fun encodeRoutines(value: List<Routine>): String =
         json.encodeToString(ListSerializer(Routine.serializer()), value)
 
@@ -167,6 +230,9 @@ class RoutineRepository private constructor(context: Context) {
 
     private fun encodeNfc(value: List<NfcRecord>): String =
         json.encodeToString(ListSerializer(NfcRecord.serializer()), value)
+
+    private fun encodeGlobals(value: List<GlobalVar>): String =
+        json.encodeToString(ListSerializer(GlobalVar.serializer()), value)
 
     /**
      * 背景元件（Receiver / Service）寫入紀錄後行程可能立刻結束，
@@ -197,6 +263,7 @@ class RoutineRepository private constructor(context: Context) {
         private const val FILE_ROUTINES = "routines.json"
         private const val FILE_LOGS = "logs.json"
         private const val FILE_NFC = "nfc_tags.json"
+        private const val FILE_GLOBALS = "global_vars.json"
         private const val MAX_LOGS = 50
 
         @Volatile

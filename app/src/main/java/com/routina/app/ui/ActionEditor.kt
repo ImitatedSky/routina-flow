@@ -68,7 +68,10 @@ import com.routina.app.engine.RoutineExecutor
 import com.routina.app.engine.VariableResolver
 import com.routina.app.model.Action
 import com.routina.app.model.AppTarget
+import com.routina.app.model.CompareOp
+import com.routina.app.model.Condition
 import com.routina.app.model.RingerModeType
+import com.routina.app.model.usesRightOperand
 import com.routina.app.model.Trigger
 import com.routina.app.model.VolumeStream
 import kotlinx.coroutines.Dispatchers
@@ -87,12 +90,13 @@ fun ActionEditDialog(
     trigger: Trigger,
     precedingActions: List<Action>,
     onConfirm: (Action) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    globalNames: List<String> = emptyList()
 ) {
     var draft by remember(initial) { mutableStateOf(initial) }
     var showAppPicker by remember { mutableStateOf(false) }
-    val tokenGroups = remember(trigger, precedingActions) {
-        availableTokens(trigger, precedingActions)
+    val tokenGroups = remember(trigger, precedingActions, globalNames) {
+        availableTokens(trigger, precedingActions, globalNames)
     }
 
     if (showAppPicker) {
@@ -548,6 +552,90 @@ fun ActionEditDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                is Action.SetGlobalVariable -> Column {
+                    OutlinedTextField(
+                        value = current.name,
+                        onValueChange = { draft = current.copy(name = it) },
+                        label = { Text("全域變數名稱") },
+                        placeholder = { Text("例如：今日步數") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    VariableTextField(
+                        value = current.template,
+                        onValueChange = { draft = current.copy(template = it) },
+                        label = "全域變數值",
+                        tokenGroups = tokenGroups,
+                        placeholder = "可插入變數，例如：{{時間}} 更新",
+                        minLines = 2,
+                        maxLines = 6
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "存成跨程序、可持久化的全域變數，任何程序都能以 {{全域:名稱}} 引用；" +
+                            "值會保存到下次被覆寫。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.IfBegin -> ConditionEditor(
+                    condition = current.condition,
+                    tokenGroups = tokenGroups,
+                    onChange = { draft = current.copy(condition = it) }
+                )
+
+                is Action.ElseIf -> ConditionEditor(
+                    condition = current.condition,
+                    tokenGroups = tokenGroups,
+                    onChange = { draft = current.copy(condition = it) }
+                )
+
+                is Action.WhileBegin -> Column {
+                    ConditionEditor(
+                        condition = current.condition,
+                        tokenGroups = tokenGroups,
+                        onChange = { draft = current.copy(condition = it) }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "只要條件成立就重複執行到「結束重複」之間的動作" +
+                            "（有 ${Action.WHILE_MAX_ITERATIONS} 次上限保護，避免無限迴圈）。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.RepeatBegin -> Column {
+                    VariableTextField(
+                        value = current.countExpr.ifBlank { current.count.toString() },
+                        onValueChange = { text ->
+                            val n = text.trim().toIntOrNull()
+                            draft = if (n != null) current.copy(count = n.coerceAtLeast(0), countExpr = "")
+                            else current.copy(countExpr = text)
+                        },
+                        label = "重複次數",
+                        tokenGroups = numericTokenGroups(tokenGroups),
+                        placeholder = "例如：3，或插入變數",
+                        singleLine = true,
+                        keyboardType = KeyboardType.Number
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "重複執行到「結束重複」之間的動作這麼多次。動作中可用 {{迴圈:次數}} 取得目前第幾次。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.Else ->
+                    ControlMarkerInfo("前面條件都不成立時，執行到「結束如果」之間的動作。")
+
+                is Action.EndIf -> ControlMarkerInfo("「如果」區塊的結尾。")
+                is Action.EndWhile -> ControlMarkerInfo("「一直重複…當」區塊的結尾。")
+                is Action.EndRepeat -> ControlMarkerInfo("「重複 N 次」區塊的結尾。")
             }
         },
         confirmButton = {
@@ -570,7 +658,11 @@ data class VarTokenGroup(val title: String, val tokens: List<VarToken>)
  * 算出此動作可插入的變數 token，分成四類：
  * 觸發提供的、上一個結果、此動作之前設定過的變數、常用（時間/日期/星期/電量）。
  */
-fun availableTokens(trigger: Trigger, precedingActions: List<Action>): List<VarTokenGroup> =
+fun availableTokens(
+    trigger: Trigger,
+    precedingActions: List<Action>,
+    globalNames: List<String> = emptyList()
+): List<VarTokenGroup> =
     buildList {
         triggerTokens(trigger).takeIf { it.isNotEmpty() }?.let {
             add(VarTokenGroup("觸發提供", it))
@@ -583,6 +675,14 @@ fun availableTokens(trigger: Trigger, precedingActions: List<Action>): List<VarT
         if (varNames.isNotEmpty()) {
             add(VarTokenGroup("已設定的變數", varNames.map { VarToken(it, "{{var:$it}}") }))
         }
+        // 全域變數：已存在的（globalNames）加上這個程序稍早才設定的，去重後列出
+        val globalNamesAll = (globalNames + precedingActions.filterIsInstance<Action.SetGlobalVariable>()
+            .map { it.name.trim() })
+            .filter { it.isNotBlank() }
+            .distinct()
+        if (globalNamesAll.isNotEmpty()) {
+            add(VarTokenGroup("全域變數", globalNamesAll.map { VarToken(it, "{{全域:$it}}") }))
+        }
         add(
             VarTokenGroup(
                 "常用",
@@ -590,7 +690,8 @@ fun availableTokens(trigger: Trigger, precedingActions: List<Action>): List<VarT
                     VarToken("時間", "{{時間}}"),
                     VarToken("日期", "{{日期}}"),
                     VarToken("星期", "{{星期}}"),
-                    VarToken("電量", "{{電量}}")
+                    VarToken("電量", "{{電量}}"),
+                    VarToken("迴圈次數", "{{迴圈:次數}}")
                 )
             )
         )
@@ -1030,6 +1131,87 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.SetAlarm -> true
     is Action.Text -> action.template.isNotBlank()
     is Action.SetVariable -> action.name.isNotBlank()
+    is Action.SetGlobalVariable -> action.name.isNotBlank()
+    // 流程控制標記沒有必填欄位（條件空＝恆成立）
+    is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
+    is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
+    is Action.EndRepeat -> true
+}
+
+/** 判斷式編輯器：左值 + 運算子 + 右值（為空／不為空時隱藏右值） */
+@Composable
+private fun ConditionEditor(
+    condition: Condition,
+    tokenGroups: List<VarTokenGroup>,
+    onChange: (Condition) -> Unit
+) {
+    val needsRight = condition.op.usesRightOperand
+    Column {
+        VariableTextField(
+            value = condition.left,
+            onValueChange = { onChange(condition.copy(left = it)) },
+            label = "左值",
+            tokenGroups = tokenGroups,
+            placeholder = "例如：{{電量}} 或 {{全域:count}}",
+            singleLine = true
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "條件",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(4.dp))
+        ChipRow(
+            options = CompareOp.entries,
+            selected = condition.op,
+            label = { compareOpFullLabel(it) },
+            onSelect = { onChange(condition.copy(op = it)) }
+        )
+        if (needsRight) {
+            Spacer(Modifier.height(10.dp))
+            VariableTextField(
+                value = condition.right,
+                onValueChange = { onChange(condition.copy(right = it)) },
+                label = "右值",
+                tokenGroups = tokenGroups,
+                placeholder = "例如：20",
+                singleLine = true
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "兩邊都是數字時比數值，否則比文字。左右值都能插入變數。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** 運算子下拉的完整文字（積木上的短標籤見 UiLabels.compareOpLabel） */
+private fun compareOpFullLabel(op: CompareOp): String = when (op) {
+    CompareOp.EQUALS -> "等於"
+    CompareOp.NOT_EQUALS -> "不等於"
+    CompareOp.GREATER -> "大於"
+    CompareOp.GREATER_EQUAL -> "大於等於"
+    CompareOp.LESS -> "小於"
+    CompareOp.LESS_EQUAL -> "小於等於"
+    CompareOp.CONTAINS -> "包含"
+    CompareOp.NOT_CONTAINS -> "不包含"
+    CompareOp.IS_EMPTY -> "為空"
+    CompareOp.IS_NOT_EMPTY -> "不為空"
+    CompareOp.IS_TRUE -> "為真 (true)"
+    CompareOp.IS_FALSE -> "為假 (false)"
+}
+
+/** 無可編輯參數的流程標記（否則／各結束標記）的說明 */
+@Composable
+private fun ControlMarkerInfo(text: String) {
+    Text(
+        "$text\n\n這是流程標記，沒有可編輯的參數。",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 /** 已安裝且可啟動的 App 清單 */

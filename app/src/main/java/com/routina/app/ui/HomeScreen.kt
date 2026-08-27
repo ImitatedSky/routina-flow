@@ -47,6 +47,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Nfc
@@ -129,7 +130,8 @@ fun HomeScreen(
     onCreateFromTemplate: (String) -> Unit,
     onEdit: (String) -> Unit,
     onOpenLogs: () -> Unit,
-    onOpenNfc: () -> Unit
+    onOpenNfc: () -> Unit,
+    onOpenGlobals: () -> Unit
 ) {
     val context = LocalContext.current
     val routines by viewModel.routines.collectAsState()
@@ -290,6 +292,9 @@ fun HomeScreen(
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             }
                         )
+                    }
+                    IconButton(onClick = onOpenGlobals) {
+                        Icon(Icons.Filled.DataObject, contentDescription = "全域變數")
                     }
                     IconButton(onClick = onOpenNfc) {
                         Icon(Icons.Filled.Nfc, contentDescription = "NFC 標籤庫")
