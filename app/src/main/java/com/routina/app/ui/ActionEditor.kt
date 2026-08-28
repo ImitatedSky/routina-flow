@@ -65,7 +65,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.routina.app.engine.ExpressionEval
 import com.routina.app.engine.RoutineExecutor
+import com.routina.app.engine.RunContext
 import com.routina.app.engine.VariableResolver
 import com.routina.app.model.Action
 import com.routina.app.model.AppTarget
@@ -580,6 +582,36 @@ fun ActionEditDialog(
                     Text(
                         "存成跨程序、可持久化的全域變數，任何程序都能以 {{全域:名稱}} 引用；" +
                             "值會保存到下次被覆寫。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.Expression -> Column {
+                    VariableTextField(
+                        value = current.text,
+                        onValueChange = { draft = current.copy(text = it) },
+                        label = "運算式",
+                        tokenGroups = tokenGroups,
+                        placeholder = "例如：a = 3　或　count = count + 1",
+                        minLines = 1,
+                        maxLines = 3
+                    )
+                    // 即時預覽：以空情境試算（沒設過的變數當 0），讓使用者一眼看到結果
+                    val preview = remember(current.text) { previewExpression(current.text) }
+                    if (preview != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "預覽：$preview",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "一行寫「變數 = 值」。右邊有 + - * / % 就算數學（變數直接寫名字，例如 count + 1，" +
+                            "沒設過的當 0）；否則整段存成文字。也能用 {{時間}} 這類變數；" +
+                            "想強制當文字用引號 \"...\"。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1225,6 +1257,10 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.SetVariable -> action.name.isNotBlank()
     is Action.SetGlobalVariable -> action.name.isNotBlank()
     is Action.Calculate -> action.name.isNotBlank()
+    is Action.Expression -> {
+        val eq = action.text.indexOf('=')
+        eq > 0 && action.text.substring(0, eq).isNotBlank()
+    }
     // 流程控制標記沒有必填欄位（條件空＝恆成立）
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
@@ -1282,6 +1318,14 @@ private fun ConditionEditor(
         )
     }
 }
+
+/** 運算式的即時預覽：以空情境試算（沒設過的變數當 0）並回傳結果；式子還不完整時回 null */
+private fun previewExpression(text: String): String? =
+    if (text.contains("=")) {
+        runCatching { ExpressionEval.evaluate(text, RunContext()).second }.getOrNull()
+    } else {
+        null
+    }
 
 /** 算術運算子的選項文字 */
 private fun mathOpFullLabel(op: MathOp): String = when (op) {

@@ -137,6 +137,7 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.SetVariable -> "設定變數"
     is Action.SetGlobalVariable -> "設定全域變數"
     is Action.Calculate -> "計算"
+    is Action.Expression -> "運算式"
     is Action.IfBegin -> "如果"
     is Action.ElseIf -> "否則如果"
     is Action.Else -> "否則"
@@ -175,6 +176,7 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.SetVariable -> "設定變數"
     is Action.SetGlobalVariable -> "設定全域變數"
     is Action.Calculate -> "計算"
+    is Action.Expression -> "運算式"
     is Action.IfBegin -> "如果"
     is Action.ElseIf -> "否則如果"
     is Action.Else -> "否則"
@@ -229,6 +231,8 @@ fun actionParamText(action: Action): String = when (action) {
         "${action.name.ifBlank { "未命名" }} = ${action.left} ${mathOpLabel(action.op)} ${action.right}",
         20
     )
+
+    is Action.Expression -> truncate(action.text.flattenLines().ifBlank { "未設定" }, 24)
 
     is Action.IfBegin -> conditionSummary(action.condition)
     is Action.ElseIf -> conditionSummary(action.condition)

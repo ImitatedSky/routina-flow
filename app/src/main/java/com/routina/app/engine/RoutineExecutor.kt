@@ -451,6 +451,7 @@ object RoutineExecutor {
                 is Action.SetVariable -> doSetVariable(resolved, ctx)
                 is Action.SetGlobalVariable -> doSetGlobalVariable(resolved, ctx)
                 is Action.Calculate -> doCalculate(resolved, ctx)
+                is Action.Expression -> doExpression(resolved, ctx)
                 // 流程控制標記與「執行程序」由直譯器 runProgram 處理；走到這裡不做事
                 is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
                 is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
@@ -1053,6 +1054,13 @@ object RoutineExecutor {
         return "$name = $text"
     }
 
+    /** 運算式：解析並求值一行「名稱 = 值」，存進具名變數 */
+    private fun doExpression(action: Action.Expression, ctx: RunContext): String? {
+        val (name, value) = ExpressionEval.evaluate(action.text, ctx)
+        ctx.vars[name] = value
+        return "$name = $value"
+    }
+
     /** 整數結果去掉小數點；非整數保留（去尾零），四捨五入到 6 位避免浮點雜訊 */
     private fun formatNumber(d: Double): String = when {
         d.isNaN() || d.isInfinite() -> "0"
@@ -1505,6 +1513,8 @@ object RoutineExecutor {
 
         is Action.Calculate ->
             "計算 ${action.name.ifBlank { "(未命名)" }} = ${action.left} ${mathOpSymbol(action.op)} ${action.right}"
+
+        is Action.Expression -> "運算式：${redactText(action.text, 40)}"
 
         is Action.IfBegin -> "如果 ${describeCondition(action.condition)}"
         is Action.ElseIf -> "否則如果 ${describeCondition(action.condition)}"

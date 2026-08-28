@@ -572,6 +572,15 @@ sealed class Action {
         val right: String = ""
     ) : Action()
 
+    /**
+     * 運算式：一行 Python 式的變數指派 `名稱 = 值`（存進具名變數，後續以 `{{var:名稱}}` 引用）。
+     * 等號右邊若含算術運算子（+ - * / %）就當數學算（變數直接寫名字，如 `count + 1`，缺的當 0）；
+     * 否則整段當文字存起來。`{{...}}` token 仍可用；用引號 `"..."` 可強制當文字。
+     */
+    @Serializable
+    @SerialName("expression")
+    data class Expression(val text: String = "") : Action()
+
     // ---- 流程控制（配對標記）----
     // 扁平清單用配對的 begin/end 標記表達層級，由 RoutineExecutor 的直譯器解讀；
     // dispatch 時皆為 no-op（流程由直譯器處理）。對不成對的標記直譯器保持穩健、不崩潰。

@@ -125,9 +125,11 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
         listOf(Action.TakePhoto(), Action.BurstPhoto(), Action.RecordAudio())
     ),
     PaletteGroup("流程", listOf(Action.Wait(), Action.Clipboard())),
+    // 運算式（Python 式一行「名稱 = 值」）取代原本拆散的「設定變數 / 計算」；
+    // 舊型別仍可反序列化與執行，只是不再從調色盤新增。
     PaletteGroup(
         "變數",
-        listOf(Action.Text(), Action.SetVariable(), Action.SetGlobalVariable(), Action.Calculate())
+        listOf(Action.Expression(), Action.Text(), Action.SetGlobalVariable())
     ),
     PaletteGroup(
         "流程控制",
