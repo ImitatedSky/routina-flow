@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AltRoute
 import androidx.compose.material.icons.filled.BatterySaver
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
@@ -226,6 +227,26 @@ object RoutineTemplates {
                         Action.Else,
                         Action.Notify(title = "建議充電", message = "目前 {{電量}}%"),
                         Action.EndIf
+                    )
+                )
+            }
+        ),
+        // 示範變數：運算式「設定」變數 → 顯示通知用 {{var:名稱}}「取用」它。
+        RoutineTemplate(
+            id = "var-demo",
+            title = "變數範例",
+            description = "手動：a = 3，再用通知顯示 {{var:a}}",
+            color = RoutinaColors.ActionSetVariable,
+            icon = Icons.Filled.Calculate,
+            needsSetup = false,
+            build = {
+                Routine(
+                    name = "變數範例",
+                    enabled = false,
+                    trigger = Trigger.Manual,
+                    actions = listOf(
+                        Action.Expression(text = "a = 3"),
+                        Action.Notify(title = "變數 a", message = "a = {{var:a}}")
                     )
                 )
             }

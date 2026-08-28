@@ -792,8 +792,14 @@ fun availableTokens(
             add(VarTokenGroup("觸發提供", it))
         }
         add(VarTokenGroup("上一個結果", listOf(VarToken("上一個動作的輸出", "{{result}}"))))
-        val varNames = precedingActions.filterIsInstance<Action.SetVariable>()
-            .map { it.name.trim() }
+        // 前面用「設定變數 / 計算 / 運算式」設過的變數，都列進「已設定的變數」方便插入
+        val setVarNames = precedingActions.filterIsInstance<Action.SetVariable>().map { it.name.trim() }
+        val calcVarNames = precedingActions.filterIsInstance<Action.Calculate>().map { it.name.trim() }
+        val exprVarNames = precedingActions.filterIsInstance<Action.Expression>().mapNotNull { expr ->
+            val eq = expr.text.indexOf('=')
+            if (eq > 0) expr.text.substring(0, eq).trim() else null
+        }
+        val varNames = (setVarNames + calcVarNames + exprVarNames)
             .filter { it.isNotBlank() }
             .distinct()
         if (varNames.isNotEmpty()) {
