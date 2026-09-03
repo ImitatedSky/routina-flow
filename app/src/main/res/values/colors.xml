@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#1E88E5</color>
+
+    <!-- 桌面小工具（亮色）：自畫底＋自訂文字色，確保在啟動器上對比清楚。暗色見 values-night -->
+    <color name="widget_bg">#FFFAFAFA</color>
+    <color name="widget_text_primary">#FF1C1B1F</color>
+    <color name="widget_text_secondary">#FF5F6368</color>
+    <color name="widget_accent">#FF1565C0</color>
 </resources>

@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Routina</string>
+
+    <!-- 桌面小工具 -->
+    <string name="widget_empty">還沒有例行程序</string>
+    <string name="widget_run_hint">▶</string>
 </resources>

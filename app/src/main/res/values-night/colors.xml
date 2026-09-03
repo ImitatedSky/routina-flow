@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 桌面小工具（暗色）：系統進入深色模式時 RemoteViews 會採用這組色，避免文字在暗底消失 -->
+<resources>
+    <color name="widget_bg">#FF1C1B1F</color>
+    <color name="widget_text_primary">#FFECECEC</color>
+    <color name="widget_text_secondary">#FFB0B3B8</color>
+    <color name="widget_accent">#FF82B1FF</color>
+</resources>
