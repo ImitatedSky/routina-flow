@@ -18,6 +18,7 @@ import com.routina.app.model.Routine
 import com.routina.app.model.Trigger
 import com.routina.app.model.geoCircle
 import com.routina.app.model.isLocation
+import com.routina.app.model.opposite
 
 /**
  * 區域觸發的地理圍欄註冊管理。
@@ -136,11 +137,22 @@ object GeofenceManager {
     private val Routine.isRegisterable: Boolean
         get() = enabled && trigger.isLocation && trigger.geoCircle?.isConfigured == true
 
+    /**
+     * 要向系統註冊的轉換類型。
+     * 開了「離開時還原」時連反向轉換一起註冊，否則系統根本不會送出條件結束的事件
+     * （見 [RestoreOnExit]）；反向事件由 [GeofenceReceiver] 分流成還原、不執行動作。
+     */
+    private fun Routine.transitionMask(): Int? {
+        val own = trigger.transitionType() ?: return null
+        val reverse = if (restoreOnExit) trigger.opposite?.transitionType() else null
+        return if (reverse != null) own or reverse else own
+    }
+
     /** Geofence id = routine.id，天然唯一且可直接回查 */
     private fun Routine.toGeofence(): Geofence? {
         if (!isRegisterable) return null
         val circle = trigger.geoCircle ?: return null
-        val transition = trigger.transitionType() ?: return null
+        val transition = transitionMask() ?: return null
         return runCatching {
             Geofence.Builder()
                 .setRequestId(id)

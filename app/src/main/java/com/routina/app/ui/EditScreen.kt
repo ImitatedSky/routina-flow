@@ -115,6 +115,7 @@ import com.routina.app.model.batteryThreshold
 import com.routina.app.model.btDevice
 import com.routina.app.model.geoCircle
 import com.routina.app.model.isConfigured
+import com.routina.app.model.opposite
 import com.routina.app.model.stateTurnedOn
 import com.routina.app.model.withAppTarget
 import com.routina.app.model.withBatteryThreshold
@@ -933,7 +934,8 @@ fun EditScreen(
                     routine = draft,
                     onMaxRunsChange = { draft = draft.copy(maxRuns = it) },
                     onExpiresAtChange = { draft = draft.copy(expiresAt = it) },
-                    onResetCount = { draft = draft.copy(runCount = 0) }
+                    onResetCount = { draft = draft.copy(runCount = 0) },
+                    onRestoreOnExitChange = { draft = draft.copy(restoreOnExit = it) }
                 )
             },
             confirmButton = {
@@ -1035,11 +1037,13 @@ private fun Routine.contentEquals(other: Routine): Boolean =
         color == other.color &&
         maxRuns == other.maxRuns &&
         runCount == other.runCount &&
-        expiresAt == other.expiresAt
+        expiresAt == other.expiresAt &&
+        restoreOnExit == other.restoreOnExit
 
 /**
  * 觸發限制（選用）：設定「最多觸發幾次」與「觸發到哪一天」，達到後自動停用此程序。
- * 手動測試不計入次數。改動任一項都會被 [contentEquals] 視為未儲存變更。
+ * 手動測試不計入次數。另外提供「離開時還原設定」（只在觸發有反向事件時出現）。
+ * 改動任一項都會被 [contentEquals] 視為未儲存變更。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1047,7 +1051,8 @@ private fun TriggerLimitSection(
     routine: Routine,
     onMaxRunsChange: (Int?) -> Unit,
     onExpiresAtChange: (Long?) -> Unit,
-    onResetCount: () -> Unit
+    onResetCount: () -> Unit,
+    onRestoreOnExitChange: (Boolean) -> Unit
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
 
@@ -1108,6 +1113,24 @@ private fun TriggerLimitSection(
             Button(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("觸發到 ${formatExpiryDate(routine.expiresAt)}（含當日）")
             }
+        }
+
+        // 只有「有結束概念」的觸發（進入/離開、連上/斷線…）才給這個選項
+        if (routine.trigger.opposite != null) {
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("離開時還原設定", modifier = Modifier.weight(1f))
+                Switch(
+                    checked = routine.restoreOnExit,
+                    onCheckedChange = onRestoreOnExitChange
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "條件結束時（例如離開區域、Wi-Fi 斷線）把音量／響鈴／勿擾／亮度／自動旋轉還原成觸發前的狀態",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 

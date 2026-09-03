@@ -502,6 +502,9 @@ class MonitorService : Service() {
     }
 
     private fun runMatching(source: TriggerSource, predicate: (Trigger) -> Boolean) {
+        // 同一個事件也可能是別的程序的「條件結束」（例如 Wi-Fi 斷線之於「連上 Wi-Fi」的程序）
+        RestoreOnExit.onEvent(this, predicate)
+
         val matched = RoutineRepository.get(this).routines.value
             .filter { it.enabled && predicate(it.trigger) }
         if (matched.isEmpty()) return
