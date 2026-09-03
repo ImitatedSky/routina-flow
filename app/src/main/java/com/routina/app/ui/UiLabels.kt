@@ -139,6 +139,8 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.Dial -> "撥號"
     is Action.SendSms -> "傳簡訊"
     is Action.GetLocation -> "取得目前位置"
+    is Action.SnapshotSettings -> "記住目前設定"
+    is Action.RestoreSettings -> "回復設定"
     is Action.Http -> "HTTP 請求"
     is Action.MediaKey -> "播放控制"
     is Action.Wait -> "等待"
@@ -196,6 +198,8 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.Dial -> "撥號"
     is Action.SendSms -> "傳簡訊給"
     is Action.GetLocation -> "目前位置存到"
+    is Action.SnapshotSettings -> "記住目前設定"
+    is Action.RestoreSettings -> "回復設定"
     is Action.Http -> "HTTP ${httpMethodName(action.method)}"
     is Action.MediaKey -> "播放控制"
     is Action.Wait -> "等待"
@@ -254,6 +258,8 @@ fun actionParamText(action: Action): String = when (action) {
     is Action.Dial -> truncate(action.number.ifBlank { "未設定" }, 20)
     is Action.SendSms -> truncate(action.number.ifBlank { "未設定" }, 20)
     is Action.GetLocation -> action.variableName.ifBlank { "未命名" }
+    is Action.SnapshotSettings -> "全部設定"
+    is Action.RestoreSettings -> "全部設定"
     is Action.Http -> truncate(action.url.ifBlank { "未設定" }, 20)
     is Action.MediaKey -> mediaKeyName(action.key)
     is Action.Wait -> numParam(action.secondsExpr, "${action.seconds} 秒")

@@ -37,6 +37,9 @@ class BtAclReceiver : BroadcastReceiver() {
 
         try {
             val address = deviceAddress(intent) ?: return
+            // 連接／斷開也可能是別的程序的「條件結束」→ 先還原它們觸發前的設定
+            RestoreOnExit.onEvent(appContext) { it.matches(connected, address) }
+
             val matched = RoutineRepository.get(appContext).routines.value
                 .filter { it.enabled && it.trigger.matches(connected, address) }
             if (matched.isEmpty()) return

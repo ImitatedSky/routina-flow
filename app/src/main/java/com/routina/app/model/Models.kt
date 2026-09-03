@@ -244,6 +244,36 @@ val Trigger.needsMonitor: Boolean
         this is Trigger.HeadsetPlugged ||
         this is Trigger.HeadsetUnplugged
 
+/**
+ * 「條件結束」時對應的反向觸發；沒有結束概念的觸發為 null（不提供「離開時還原」）。
+ *
+ * 例如「進入區域」的結束是「離開同一個區域」、「連上 Wi-Fi」的結束是「Wi-Fi 斷線」。
+ * 用途是離開時還原：分派點收到事件時，拿這個反向觸發去比對就知道哪些程序的條件結束了
+ * （見 [com.routina.app.engine.RestoreOnExit]）。
+ * Wi-Fi 斷線本身不帶參數，反向只能配到「連上任一 Wi-Fi」；解鎖螢幕的結束則視為螢幕關閉。
+ */
+val Trigger.opposite: Trigger?
+    get() = when (this) {
+        is Trigger.LocationEnter -> Trigger.LocationExit(lat, lng, radiusM, label)
+        is Trigger.LocationExit -> Trigger.LocationEnter(lat, lng, radiusM, label)
+        is Trigger.WifiConnected -> Trigger.WifiDisconnected
+        Trigger.WifiDisconnected -> Trigger.WifiConnected()
+        is Trigger.BtConnected -> Trigger.BtDisconnected(deviceAddress, deviceName)
+        is Trigger.BtDisconnected -> Trigger.BtConnected(deviceAddress, deviceName)
+        Trigger.PowerConnected -> Trigger.PowerDisconnected
+        Trigger.PowerDisconnected -> Trigger.PowerConnected
+        Trigger.ScreenOn -> Trigger.ScreenOff
+        Trigger.ScreenOff -> Trigger.ScreenOn
+        Trigger.ScreenUnlocked -> Trigger.ScreenOff
+        Trigger.HeadsetPlugged -> Trigger.HeadsetUnplugged
+        Trigger.HeadsetUnplugged -> Trigger.HeadsetPlugged
+        is Trigger.AirplaneMode -> Trigger.AirplaneMode(!turnedOn)
+        is Trigger.DndChanged -> Trigger.DndChanged(!turnedOn)
+        is Trigger.PowerSave -> Trigger.PowerSave(!turnedOn)
+        is Trigger.AppState -> Trigger.AppState(packageName, appName, !onOpen)
+        else -> null
+    }
+
 /** 是否為藍牙裝置觸發（由靜態 ACL receiver 接收） */
 val Trigger.isBluetooth: Boolean
     get() = this is Trigger.BtConnected || this is Trigger.BtDisconnected
@@ -534,6 +564,23 @@ sealed class Action {
         val variableName: String = "",
         val format: LocationFormat = LocationFormat.LAT_LNG
     ) : Action()
+    /**
+     * 記住目前設定：把當下可調整的裝置設定（各串流音量、響鈴模式、勿擾、螢幕亮度與亮度模式）
+     * 拍成一張快照存起來，供之後的「回復設定」還原。搭配既有的進入／離開類觸發
+     * （例如進入區域 → 記住目前設定＋靜音；離開區域 → 回復設定），就能自己組出
+     * Samsung 情境模式 / Tasker exit task 的「條件結束時還原」效果，不必改動一次觸發的模型。
+     */
+    @Serializable
+    @SerialName("snapshot_settings")
+    data object SnapshotSettings : Action()
+
+    /**
+     * 回復設定：把「記住目前設定」拍下的快照重新套回去，沿用各設定動作的同一套機制與權限降級
+     * （勿擾 / 亮度缺權限時略過該項並註明，絕不崩潰）。尚未有任何快照時記為失敗。
+     */
+    @Serializable
+    @SerialName("restore_settings")
+    data object RestoreSettings : Action()
 
     /** HTTP 請求（webhook）：GET 或 POST，body 為純文字 */
     @Serializable
@@ -1049,6 +1096,11 @@ data class Routine(
     val runCount: Int = 0,
     /** 結束日期（epoch millis）；到期後不再觸發並自動停用。null＝無期限（舊資料相容）。 */
     val expiresAt: Long? = null,
+    /**
+     * 離開時還原：觸發執行前先記下裝置設定，等條件結束（[Trigger.opposite]）時還原回去。
+     * 只有反向觸發存在的觸發類型才提供這個選項（見 [com.routina.app.engine.RestoreOnExit]）。
+     */
+    val restoreOnExit: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
 ) {
     /** AlarmManager PendingIntent 的 requestCode：由 id 推導，穩定且不衝突。 */

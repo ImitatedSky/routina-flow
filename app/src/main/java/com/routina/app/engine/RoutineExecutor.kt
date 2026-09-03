@@ -157,6 +157,11 @@ object RoutineExecutor {
             callStack.add(routine.id)
         }
 
+        // 開了「離開時還原」的觸發執行：動作動手改設定之前，先記下現在的裝置狀態
+        if (source != TriggerSource.MANUAL && routine.restoreOnExit) {
+            RestoreOnExit.snapshot(appContext, routine)
+        }
+
         // 動作以直譯器執行（支援 如果／否則／while／重複 的流程控制）；扁平清單用配對標記表達層級。
         val results = mutableListOf<ActionResult>()
         val budget = intArrayOf(Action.MAX_ACTIONS_PER_RUN)
@@ -496,6 +501,8 @@ object RoutineExecutor {
                 is Action.Dial -> doDial(context, routine, index, resolved, canLaunchActivity)
                 is Action.SendSms -> doSendSms(context, routine, index, resolved, canLaunchActivity)
                 is Action.GetLocation -> doGetLocation(context, resolved, ctx)
+                is Action.SnapshotSettings -> doSnapshotSettings(context)
+                is Action.RestoreSettings -> doRestoreSettings(context, ctx)
                 is Action.Http -> doHttp(resolved, ctx)
                 is Action.MediaKey -> doMediaKey(context, resolved)
                 is Action.Wait -> doWait(resolved, allowWait, ctx)
@@ -744,41 +751,14 @@ object RoutineExecutor {
     }
 
     private fun doMediaVolume(context: Context, action: Action.MediaVolume, ctx: RunContext): String? {
-        val audio = context.getSystemService(AudioManager::class.java)
-            ?: error("無法取得音訊服務")
-        val stream = audioStream(action.stream)
-        val max = audio.getStreamMaxVolume(stream)
         val percent = resolveNum(action.percentExpr, action.percent, Action.PERCENT_SAFE, ctx)
-        val target = (max * percent / 100f).roundToInt().coerceIn(0, max)
-        try {
-            audio.setStreamVolume(stream, target, 0)
-        } catch (t: SecurityException) {
-            // 勿擾模式下調整鈴聲 / 通知音量需要勿擾模式存取權
-            notifyDndPermissionNeeded(context)
-            error("勿擾模式下需要勿擾模式存取權，已發送授權引導通知")
-        }
+        val max = audioManager(context).getStreamMaxVolume(audioStream(action.stream))
+        applyStreamVolume(context, action.stream, (max * percent / 100f).roundToInt())
         return null
     }
 
     private fun doRingerMode(context: Context, action: Action.RingerMode): String? {
-        val audio = context.getSystemService(AudioManager::class.java)
-            ?: error("無法取得音訊服務")
-        // 只有切換為靜音 / 震動需要「勿擾模式存取權」；切回正常模式直接嘗試即可
-        if (action.mode != RingerModeType.NORMAL) {
-            requireDndAccess(context, "切換響鈴模式")
-        }
-        val target = when (action.mode) {
-            RingerModeType.NORMAL -> AudioManager.RINGER_MODE_NORMAL
-            RingerModeType.VIBRATE -> AudioManager.RINGER_MODE_VIBRATE
-            RingerModeType.SILENT -> AudioManager.RINGER_MODE_SILENT
-        }
-        try {
-            audio.ringerMode = target
-        } catch (t: Throwable) {
-            // 部分機型即使切回正常模式也要求勿擾模式存取權
-            notifyDndPermissionNeeded(context)
-            error("切換響鈴模式失敗：${t.message ?: t.javaClass.simpleName}")
-        }
+        applyRingerMode(context, action.mode)
         return null
     }
 
@@ -877,14 +857,7 @@ object RoutineExecutor {
 
     /** 勿擾模式：開啟＝只允許優先通知，關閉＝全部通知 */
     private fun doDnd(context: Context, action: Action.Dnd): String? {
-        val manager = requireDndAccess(context, "切換勿擾模式")
-        manager.setInterruptionFilter(
-            if (action.on) {
-                NotificationManager.INTERRUPTION_FILTER_PRIORITY
-            } else {
-                NotificationManager.INTERRUPTION_FILTER_ALL
-            }
-        )
+        applyDnd(context, action.on)
         return null
     }
 
@@ -893,21 +866,122 @@ object RoutineExecutor {
      * （使用者開著自動亮度時，系統會在下一次環境光變化時接手，這是預期行為）。
      */
     private fun doBrightness(context: Context, action: Action.Brightness, ctx: RunContext): String? {
+        val percent = resolveNum(action.percentExpr, action.percent, Action.PERCENT_SAFE, ctx)
+        applyBrightness(context, (MAX_BRIGHTNESS * percent / 100f).roundToInt())
+        return null
+    }
+
+    /** 記住目前設定：把當下可調整的設定拍成快照（見 [SettingsSnapshot]），供「回復設定」還原 */
+    private fun doSnapshotSettings(context: Context): String? = SettingsSnapshot.capture(context)
+
+    /**
+     * 回復設定：把「記住目前設定」的快照套回去，逐項沿用既有設定動作的機制與權限降級
+     * （doMediaVolume / doRingerMode / doDnd / doBrightness）。缺權限的項目略過並註明，
+     * 尚未有任何快照時整個動作記為失敗。
+     */
+    private fun doRestoreSettings(context: Context, ctx: RunContext): String {
+        val snapshot = SettingsSnapshot.load(context)
+            ?: error("尚未有任何已記住的設定，請先用「記住目前設定」")
+        val skipped = mutableListOf<String>()
+        snapshot.volumes.forEach { (stream, percent) ->
+            runCatching {
+                doMediaVolume(context, Action.MediaVolume(percent = percent, stream = stream), ctx)
+            }.onFailure { skipped += "${volumeStreamLabel(stream)}音量" }
+        }
+        snapshot.ringerMode?.let { mode ->
+            runCatching { doRingerMode(context, Action.RingerMode(mode)) }
+                .onFailure { skipped += "響鈴模式" }
+        }
+        snapshot.dndOn?.let { on ->
+            runCatching { doDnd(context, Action.Dnd(on)) }.onFailure { skipped += "勿擾模式" }
+        }
+        snapshot.brightnessPercent?.let { percent ->
+            runCatching {
+                doBrightness(context, Action.Brightness(percent = percent), ctx)
+                snapshot.brightnessAuto?.let { restoreBrightnessMode(context, it) }
+            }.onFailure { skipped += "螢幕亮度" }
+        }
+        return if (skipped.isEmpty()) "已回復設定" else "已回復設定（略過：${skipped.joinToString("、")}）"
+    }
+
+    /** 還原亮度模式（自動／手動）；與亮度值同屬「修改系統設定」權限，寫在 doBrightness 成功之後 */
+    private fun restoreBrightnessMode(context: Context, auto: Boolean) {
+        Settings.System.putInt(
+            context.contentResolver,
+            Settings.System.SCREEN_BRIGHTNESS_MODE,
+            if (auto) {
+                Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
+            } else {
+                Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            }
+        )
+    }
+
+    // ---------- 系統設定的實際套用 ----------
+    // 動作與「離開時還原」（[RestoreOnExit]）共用同一份寫入邏輯：
+    // 權限檢查、引導通知與失敗訊息只有一處，兩邊行為必然一致。
+
+    /**
+     * 切換響鈴模式。
+     * 只有切換為靜音 / 震動需要「勿擾模式存取權」；切回正常模式直接嘗試即可。
+     */
+    internal fun applyRingerMode(context: Context, mode: RingerModeType) {
+        val audio = audioManager(context)
+        if (mode != RingerModeType.NORMAL) {
+            requireDndAccess(context, "切換響鈴模式")
+        }
+        val target = when (mode) {
+            RingerModeType.NORMAL -> AudioManager.RINGER_MODE_NORMAL
+            RingerModeType.VIBRATE -> AudioManager.RINGER_MODE_VIBRATE
+            RingerModeType.SILENT -> AudioManager.RINGER_MODE_SILENT
+        }
+        try {
+            audio.ringerMode = target
+        } catch (t: Throwable) {
+            // 部分機型即使切回正常模式也要求勿擾模式存取權
+            notifyDndPermissionNeeded(context)
+            error("切換響鈴模式失敗：${t.message ?: t.javaClass.simpleName}")
+        }
+    }
+
+    /** 設定音量：[index] 為系統原始刻度（非百分比），夾在該串流的合法範圍內 */
+    internal fun applyStreamVolume(context: Context, stream: VolumeStream, index: Int) {
+        val audio = audioManager(context)
+        val target = audioStream(stream)
+        val max = audio.getStreamMaxVolume(target)
+        try {
+            audio.setStreamVolume(target, index.coerceIn(0, max), 0)
+        } catch (t: SecurityException) {
+            // 勿擾模式下調整鈴聲 / 通知音量需要勿擾模式存取權
+            notifyDndPermissionNeeded(context)
+            error("勿擾模式下需要勿擾模式存取權，已發送授權引導通知")
+        }
+    }
+
+    /** 勿擾模式：開啟＝只允許優先通知，關閉＝全部通知 */
+    internal fun applyDnd(context: Context, on: Boolean) {
+        val manager = requireDndAccess(context, "切換勿擾模式")
+        manager.setInterruptionFilter(
+            if (on) {
+                NotificationManager.INTERRUPTION_FILTER_PRIORITY
+            } else {
+                NotificationManager.INTERRUPTION_FILTER_ALL
+            }
+        )
+    }
+
+    /** 寫入螢幕亮度：[value] 為系統原始刻度（0–[MAX_BRIGHTNESS]） */
+    internal fun applyBrightness(context: Context, value: Int) {
         if (!canWriteSettings(context)) {
             notifyWriteSettingsNeeded(context)
             error("缺少「修改系統設定」權限，已發送授權引導通知")
         }
-        val percent = resolveNum(action.percentExpr, action.percent, Action.PERCENT_SAFE, ctx)
-        val value = (MAX_BRIGHTNESS * percent / 100f)
-            .roundToInt()
-            .coerceIn(0, MAX_BRIGHTNESS)
         val written = Settings.System.putInt(
             context.contentResolver,
             Settings.System.SCREEN_BRIGHTNESS,
-            value
+            value.coerceIn(0, MAX_BRIGHTNESS)
         )
         if (!written) error("系統拒絕寫入亮度設定")
-        return null
     }
 
     /** 自動旋轉：寫入 ACCELEROMETER_ROTATION（1/0），權限處理同螢幕亮度 */
@@ -1045,6 +1119,8 @@ object RoutineExecutor {
     /** 經緯度輸出固定 6 位小數（約 0.1 公尺解析度，足夠且不帶浮點雜訊） */
     private fun formatCoordinate(value: Double): String =
         String.format(java.util.Locale.US, "%.6f", value)
+    private fun audioManager(context: Context): AudioManager =
+        context.getSystemService(AudioManager::class.java) ?: error("無法取得音訊服務")
 
     /**
      * HTTP 請求（webhook）：連線 / 讀取各 10 秒逾時，2xx 視為成功。
@@ -1958,7 +2034,8 @@ object RoutineExecutor {
         }
     }
 
-    private fun audioStream(stream: VolumeStream): Int = when (stream) {
+    /** 音量串流對應的 AudioManager 常數（「離開時還原」讀取現值時也用得到） */
+    internal fun audioStream(stream: VolumeStream): Int = when (stream) {
         VolumeStream.MEDIA -> AudioManager.STREAM_MUSIC
         VolumeStream.RING -> AudioManager.STREAM_RING
         VolumeStream.ALARM -> AudioManager.STREAM_ALARM
@@ -1999,6 +2076,8 @@ object RoutineExecutor {
         is Action.GetLocation ->
             "取得目前位置：存到 ${action.variableName.ifBlank { "(未命名)" }}"
 
+        is Action.SnapshotSettings -> "記住目前設定"
+        is Action.RestoreSettings -> "回復設定"
         is Action.Http -> "HTTP ${action.method}：${redactUrl(action.url, stripQuery = true)}"
         is Action.MediaKey -> "播放控制：${mediaKeyLabel(action.key)}"
         is Action.Wait -> "等待 ${numLabel(action.secondsExpr, action.seconds)} 秒"
@@ -2181,7 +2260,7 @@ object RoutineExecutor {
         setOf("file", "content", "javascript", "data", "intent", "android-app")
 
     /** Android 的 SCREEN_BRIGHTNESS 值域 */
-    private const val MAX_BRIGHTNESS = 255
+    internal const val MAX_BRIGHTNESS = 255
 
     private const val HTTP_TIMEOUT_MS = 10_000
 

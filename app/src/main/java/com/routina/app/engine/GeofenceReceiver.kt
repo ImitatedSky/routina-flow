@@ -36,7 +36,12 @@ class GeofenceReceiver : BroadcastReceiver() {
             val triggeredIds = event.triggeringGeofences?.map { it.requestId } ?: return
             val repository = RoutineRepository.get(appContext)
 
-            val matched = triggeredIds.mapNotNull { repository.findById(it) }
+            val candidates = triggeredIds.mapNotNull { repository.findById(it) }
+            // 反向轉換（「進入區域」的程序收到 EXIT）＝條件結束 → 只還原設定，不執行動作。
+            // 反向轉換是 GeofenceManager 為這些程序一併註冊的，見 transitionMask。
+            RestoreOnExit.onEvent(appContext, candidates) { it.transitionType() == transition }
+
+            val matched = candidates
                 // 停用中、或圍欄殘留自舊設定（觸發類型已改）→ 不執行
                 .filter { it.enabled && it.trigger.transitionType() == transition }
             if (matched.isEmpty()) return

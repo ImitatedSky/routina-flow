@@ -130,7 +130,9 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
             Action.WifiToggle(),
             Action.AutoRotate(),
             Action.ScreenTimeout(),
-            Action.GetLocation()
+            Action.GetLocation(),
+            Action.SnapshotSettings,
+            Action.RestoreSettings
         )
     ),
     PaletteGroup(

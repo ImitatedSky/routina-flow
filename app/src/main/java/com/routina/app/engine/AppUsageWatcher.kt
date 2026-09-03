@@ -125,23 +125,23 @@ class AppUsageWatcher(context: Context) {
     }
 
     private fun fire(previous: String?, current: String) {
+        // 離開前景／進入前景也可能是別的程序的「條件結束」→ 先還原它們觸發前的設定
+        RestoreOnExit.onEvent(appContext) { it.matchesForeground(previous, current) }
+
         val matched = matchingRoutines(previous, current)
         if (matched.isEmpty()) return
         TriggerDispatch.run(appContext, matched, TriggerSource.APP)
     }
 
     private fun matchingRoutines(previous: String?, current: String): List<Routine> =
-        RoutineRepository.get(appContext).routines.value.filter { routine ->
-            val trigger = routine.trigger
-            if (!routine.enabled || trigger !is Trigger.AppState) return@filter false
-            // 還沒選 App 的程序不比對（否則會對每個 App 都成立）
-            if (trigger.packageName.isBlank()) return@filter false
-            if (trigger.onOpen) {
-                trigger.packageName == current
-            } else {
-                trigger.packageName == previous
-            }
-        }
+        RoutineRepository.get(appContext).routines.value
+            .filter { it.enabled && it.trigger.matchesForeground(previous, current) }
+
+    /** 這次前景切換是否對得上該觸發（還沒選 App 的不比對，否則會對每個 App 都成立） */
+    private fun Trigger.matchesForeground(previous: String?, current: String): Boolean {
+        if (this !is Trigger.AppState || packageName.isBlank()) return false
+        return if (onOpen) packageName == current else packageName == previous
+    }
 
     companion object {
         /** 輪詢間隔（design.md 定的 3 秒：足以「開啟 App 後幾秒內執行」又不至於耗電） */

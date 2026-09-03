@@ -88,6 +88,8 @@ object RoutinaColors {
     val ActionAutoRotate = Color(0xFFD9A23A)
     val ActionScreenTimeout = Color(0xFFDDAE4C)
     val ActionGetLocation = Color(0xFFE1B95E)
+    val ActionSnapshotSettings = Color(0xFFBA5A22)
+    val ActionRestoreSettings = Color(0xFFDDA135)
 
     // ---------- 動作：媒體與擷取（紫） ----------
     val ActionTakePhoto = Color(0xFF652F86)
@@ -174,6 +176,8 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.AutoRotate -> RoutinaColors.ActionAutoRotate
     is Action.ScreenTimeout -> RoutinaColors.ActionScreenTimeout
     is Action.GetLocation -> RoutinaColors.ActionGetLocation
+    is Action.SnapshotSettings -> RoutinaColors.ActionSnapshotSettings
+    is Action.RestoreSettings -> RoutinaColors.ActionRestoreSettings
     is Action.TakePhoto -> RoutinaColors.ActionTakePhoto
     is Action.BurstPhoto -> RoutinaColors.ActionBurstPhoto
     is Action.RecordAudio -> RoutinaColors.ActionRecordAudio

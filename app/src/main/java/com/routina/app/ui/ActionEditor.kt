@@ -436,6 +436,21 @@ fun ActionEditDialog(
                     LocationPermissionNotice()
                 }
 
+                is Action.SnapshotSettings -> Text(
+                    "把目前的各音量、響鈴模式、勿擾與螢幕亮度記錄成一張快照，供之後的「回復設定」還原。" +
+                        "沒有可編輯的參數。搭配進入／離開類觸發（例如進入區域先記住、離開區域再回復），" +
+                        "就能在情境結束時把設定復原。勿擾需要勿擾模式存取權，缺少時該項不記錄。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                is Action.RestoreSettings -> Text(
+                    "把「記住目前設定」記錄的快照重新套用回去。尚未記錄過任何設定時，這個動作會被記為失敗。" +
+                        "勿擾與螢幕亮度需要對應權限，缺少時會略過該項並在執行紀錄註明，不影響其他項目。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
                 is Action.Http -> Column {
                     ChipRow(
                         options = Action.HTTP_METHODS,
@@ -1848,6 +1863,8 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.Dial -> action.number.isNotBlank()
     is Action.SendSms -> action.number.isNotBlank()
     is Action.GetLocation -> action.variableName.isNotBlank()
+    is Action.SnapshotSettings -> true
+    is Action.RestoreSettings -> true
     is Action.Http -> action.url.isNotBlank()
     is Action.MediaKey -> true
     is Action.Wait -> true
