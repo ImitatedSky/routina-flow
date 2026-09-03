@@ -134,6 +134,8 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
     PaletteGroup("流程", listOf(Action.Wait(), Action.Clipboard())),
     // 運算式（Python 式一行「名稱 = 值」）取代原本拆散的「設定變數 / 計算」；
     // 舊型別仍可反序列化與執行，只是不再從調色盤新增。
+    // 資料處理三塊（從 JSON 取值 / 文字處理 / 日期時間）也是「算出一個值存進具名變數」，
+    // 與設定變數同源，歸在「變數」同一組。
     PaletteGroup(
         "變數",
         listOf(
@@ -141,7 +143,10 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
             Action.Text(),
             Action.SetGlobalVariable(),
             Action.AskInput(),
-            Action.ChooseMenu()
+            Action.ChooseMenu(),
+            Action.JsonGet(),
+            Action.TextTransform(),
+            Action.DateFormat()
         )
     ),
     // 清單：一行一個項目的文字變數，配合「逐項重複」把每個項目跑一遍
@@ -340,7 +345,7 @@ private fun PaletteSheet(
     // 內容不長時 Expanded 仍只有內容的高度，短清單不會變成滿版。
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        // 15 種動作 / 25 種觸發加上分組小標已遠超一個 sheet 的高度，內容必須可捲動，
+        // 40 種動作 / 25 種觸發加上分組小標已遠超一個 sheet 的高度，內容必須可捲動，
         // 否則展開到全高後底部的積木完全搆不到。
         //
         // 用 verticalScroll 的 Column 而非 LazyColumn：ModalBottomSheet 已經為

@@ -9,7 +9,7 @@ import com.routina.app.model.Trigger
 /**
  * 積木色表（唯一來源）。
  *
- * 25 種觸發 × 15 種動作時「一個型別一個獨立色相」已超出人眼可辨識的範圍，
+ * 25 種觸發 × 40 種動作時「一個型別一個獨立色相」已超出人眼可辨識的範圍，
  * 因此改為**功能分組色系**：一組一色相、組內只差色階，分組與調色盤的分組小標一致。
  *
  * 使用者明確回饋過：**文字才是主要辨識依據，顏色只負責分組輔助**。
@@ -177,6 +177,9 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.ListCreate, is Action.ListSplit, is Action.ListAppend,
     is Action.ListGet, is Action.ListCount -> RoutinaColors.ActionSetVariable
 
+    is Action.JsonGet -> RoutinaColors.ActionSetVariable
+    is Action.TextTransform -> RoutinaColors.ActionSetVariable
+    is Action.DateFormat -> RoutinaColors.ActionSetVariable
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
     is Action.EndRepeat, is Action.ForEachBegin,

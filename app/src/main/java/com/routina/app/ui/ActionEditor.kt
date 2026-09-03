@@ -75,6 +75,8 @@ import com.routina.app.model.CompareOp
 import com.routina.app.model.Condition
 import com.routina.app.model.MathOp
 import com.routina.app.model.RingerModeType
+import com.routina.app.model.TextOp
+import com.routina.app.model.usesArgs
 import com.routina.app.model.usesRightOperand
 import com.routina.app.model.Trigger
 import com.routina.app.model.VolumeStream
@@ -819,6 +821,162 @@ fun ActionEditDialog(
                     )
                 }
 
+                is Action.JsonGet -> Column {
+                    VariableTextField(
+                        value = current.source,
+                        onValueChange = { draft = current.copy(source = it) },
+                        label = "JSON 來源",
+                        tokenGroups = tokenGroups,
+                        placeholder = "通常是 {{result}}（HTTP 請求的回應）",
+                        minLines = 2,
+                        maxLines = 6
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    VariableTextField(
+                        value = current.path,
+                        onValueChange = { draft = current.copy(path = it) },
+                        label = "路徑",
+                        tokenGroups = tokenGroups,
+                        placeholder = "例如：data.items[0].name",
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = current.variableName,
+                        onValueChange = { draft = current.copy(variableName = it) },
+                        label = { Text("存到變數") },
+                        placeholder = { Text("例如：名稱") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "依路徑從 JSON 取出一個值存進變數，之後用 {{var:名稱}} 引用。" +
+                            "取到陣列時一行一個項目，取到物件時存原始 JSON；路徑不存在會記為失敗。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.TextTransform -> Column {
+                    VariableTextField(
+                        value = current.input,
+                        onValueChange = { draft = current.copy(input = it) },
+                        label = "輸入文字",
+                        tokenGroups = tokenGroups,
+                        placeholder = "可插入變數，例如 {{result}}",
+                        minLines = 2,
+                        maxLines = 6
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "處理方式",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    ChipRow(
+                        options = TextOp.entries,
+                        selected = current.op,
+                        label = { textOpName(it) },
+                        onSelect = { draft = current.copy(op = it) }
+                    )
+                    // 用不到參數的操作（大寫／小寫／去空白／長度）不顯示欄位，免得使用者以為要填
+                    if (current.op.usesArgs) {
+                        Spacer(Modifier.height(10.dp))
+                        VariableTextField(
+                            value = current.arg1,
+                            onValueChange = { draft = current.copy(arg1 = it) },
+                            label = textOpArg1Label(current.op),
+                            tokenGroups = tokenGroups,
+                            singleLine = true
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        VariableTextField(
+                            value = current.arg2,
+                            onValueChange = { draft = current.copy(arg2 = it) },
+                            label = textOpArg2Label(current.op),
+                            tokenGroups = tokenGroups,
+                            singleLine = true
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = current.variableName,
+                        onValueChange = { draft = current.copy(variableName = it) },
+                        label = { Text("存到變數") },
+                        placeholder = { Text("例如：整理後文字") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "把輸入文字處理過再存進變數，之後用 {{var:名稱}} 引用。" +
+                            "擷取的起訖是「第幾個字」（含頭含尾，超出範圍會夾回合法範圍）；" +
+                            "正規式擷取沒有符合時得到空字串。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.DateFormat -> Column {
+                    // 偏移欄用本地文字狀態：清空或只打了「-」時還沒是合法整數，仍要讓使用者繼續打
+                    var daysText by remember { mutableStateOf(offsetText(current.offsetDays)) }
+                    var minutesText by remember { mutableStateOf(offsetText(current.offsetMinutes)) }
+
+                    OutlinedTextField(
+                        value = current.variableName,
+                        onValueChange = { draft = current.copy(variableName = it) },
+                        label = { Text("存到變數") },
+                        placeholder = { Text("例如：今天") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = current.pattern,
+                        onValueChange = { draft = current.copy(pattern = it) },
+                        label = { Text("格式") },
+                        placeholder = { Text("yyyy/MM/dd HH:mm") },
+                        singleLine = true,
+                        supportingText = { Text("yyyy 年、MM 月、dd 日、HH 時、mm 分、ss 秒") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = daysText,
+                        onValueChange = {
+                            daysText = it
+                            draft = current.copy(offsetDays = it.trim().toIntOrNull() ?: 0)
+                        },
+                        label = { Text("天數偏移") },
+                        placeholder = { Text("0") },
+                        singleLine = true,
+                        supportingText = { Text("負數＝往前，例如 -1 是昨天") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = minutesText,
+                        onValueChange = {
+                            minutesText = it
+                            draft = current.copy(offsetMinutes = it.trim().toIntOrNull() ?: 0)
+                        },
+                        label = { Text("分鐘偏移") },
+                        placeholder = { Text("0") },
+                        singleLine = true,
+                        supportingText = { Text("負數＝往前，例如 -30 是半小時前") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "把「現在加上偏移」的日期時間依格式存進變數，之後用 {{var:名稱}} 引用。" +
+                            "格式不合法會記為失敗。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 is Action.AskInput -> Column {
                     VariableTextField(
                         value = current.prompt,
@@ -1078,8 +1236,11 @@ fun availableTokens(
         // 逐項重複的項目變數：迴圈內的動作可用 {{var:項目}} 取得目前項目
         val forEachItemNames = precedingActions.filterIsInstance<Action.ForEachBegin>()
             .map { it.itemVariable.trim() }
+        val jsonVarNames = precedingActions.filterIsInstance<Action.JsonGet>().map { it.variableName.trim() }
+        val textVarNames = precedingActions.filterIsInstance<Action.TextTransform>().map { it.variableName.trim() }
+        val dateVarNames = precedingActions.filterIsInstance<Action.DateFormat>().map { it.variableName.trim() }
         val varNames = (setVarNames + calcVarNames + exprVarNames + askVarNames + menuVarNames +
-            listVarNames + forEachItemNames)
+            listVarNames + forEachItemNames + jsonVarNames + textVarNames + dateVarNames)
             .filter { it.isNotBlank() }
             .distinct()
         if (varNames.isNotEmpty()) {
@@ -1554,6 +1715,9 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.ListGet -> action.variableName.isNotBlank() && action.listVariable.isNotBlank()
     is Action.ListCount -> action.variableName.isNotBlank() && action.listVariable.isNotBlank()
     // 互動動作：一定要有存入的變數名稱；選單另需至少一個非空選項
+    is Action.JsonGet -> action.variableName.isNotBlank() && action.path.isNotBlank()
+    is Action.TextTransform -> action.variableName.isNotBlank()
+    is Action.DateFormat -> action.variableName.isNotBlank()
     is Action.AskInput -> action.variableName.isNotBlank()
     is Action.ChooseMenu -> action.variableName.isNotBlank() && action.options.any { it.isNotBlank() }
     // 逐項重複要有項目變數名稱才能把項目存進去；其餘流程控制標記沒有必填欄位（條件空＝恆成立）
@@ -1622,6 +1786,26 @@ private fun previewExpression(text: String): String? =
     } else {
         null
     }
+
+/** 算術運算子的選項文字 */
+/** 文字處理第一個參數的欄位標題（各操作的參數意義不同） */
+private fun textOpArg1Label(op: TextOp): String = when (op) {
+    TextOp.REPLACE -> "要找的文字"
+    TextOp.SUBSTRING -> "從第幾個字"
+    TextOp.REGEX_EXTRACT -> "正規式"
+    else -> ""
+}
+
+/** 文字處理第二個參數的欄位標題 */
+private fun textOpArg2Label(op: TextOp): String = when (op) {
+    TextOp.REPLACE -> "換成什麼"
+    TextOp.SUBSTRING -> "到第幾個字"
+    TextOp.REGEX_EXTRACT -> "取第幾組（留空＝整段）"
+    else -> ""
+}
+
+/** 日期偏移欄的顯示文字：0 顯示空白，讓 placeholder 的「0」出來，看起來就是「不偏移」 */
+private fun offsetText(value: Int): String = if (value == 0) "" else value.toString()
 
 /** 算術運算子的選項文字 */
 private fun mathOpFullLabel(op: MathOp): String = when (op) {
