@@ -38,6 +38,7 @@ import com.routina.app.model.MathOp
 import com.routina.app.model.RingerModeType
 import com.routina.app.model.Routine
 import com.routina.app.model.RunLog
+import com.routina.app.model.TextOp
 import com.routina.app.model.Trigger
 import com.routina.app.model.TriggerSource
 import com.routina.app.model.VolumeStream
@@ -46,8 +47,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONArray
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
@@ -453,6 +458,9 @@ object RoutineExecutor {
                 is Action.SetGlobalVariable -> doSetGlobalVariable(resolved, ctx)
                 is Action.Calculate -> doCalculate(resolved, ctx)
                 is Action.Expression -> doExpression(resolved, ctx)
+                is Action.JsonGet -> doJsonGet(resolved, ctx)
+                is Action.TextTransform -> doTextTransform(resolved, ctx)
+                is Action.DateFormat -> doDateFormat(resolved, ctx)
                 is Action.AskInput ->
                     doAskInput(context, routine, index, resolved, canLaunchActivity, ctx)
 
@@ -500,6 +508,19 @@ object RoutineExecutor {
         is Action.Calculate -> action.copy(
             left = VariableResolver.resolve(action.left, ctx),
             right = VariableResolver.resolve(action.right, ctx)
+        )
+
+        // 資料處理：解析資料來源與參數；變數名稱是識別碼、不解析（同 SetVariable.name）。
+        // 日期時間動作沒有可含 token 的欄位（pattern 是格式字串），走最後的 else 原樣回傳。
+        is Action.JsonGet -> action.copy(
+            source = VariableResolver.resolve(action.source, ctx),
+            path = VariableResolver.resolve(action.path, ctx)
+        )
+
+        is Action.TextTransform -> action.copy(
+            input = VariableResolver.resolve(action.input, ctx),
+            arg1 = VariableResolver.resolve(action.arg1, ctx),
+            arg2 = VariableResolver.resolve(action.arg2, ctx)
         )
 
         // 互動動作：解析提示 / 選項 / 預設值；變數名稱是識別碼、不解析（同 SetVariable.name）
@@ -1079,6 +1100,93 @@ object RoutineExecutor {
     }
 
     /**
+     * 從 JSON 取值：依路徑取出一個值存進具名變數。
+     * 陣列輸出成「一行一個項目」（清單變數的共同格式），物件輸出原始 JSON 文字。
+     */
+    private fun doJsonGet(action: Action.JsonGet, ctx: RunContext): String {
+        val name = action.variableName.trim()
+        if (name.isBlank()) error("未設定要存入的變數名稱")
+        if (action.path.isBlank()) error("未設定路徑")
+        // 來源是空的通常代表前面那步（多半是 HTTP）沒有輸出，講清楚比報「找不到路徑」有用
+        if (action.source.isBlank()) error("JSON 來源是空的")
+        val value = JsonPath.read(action.source, action.path)
+            ?: error("找不到路徑：${action.path}")
+        val text = jsonText(value)
+        ctx.vars[name] = text
+        return "$name = ${redactText(text, 40)}"
+    }
+
+    /** JSON 值轉成變數字串：陣列一行一個項目、物件保留 JSON 文字、其餘取字面值 */
+    private fun jsonText(value: Any): String = when {
+        value == JSONObject.NULL -> ""
+        value is JSONArray -> (0 until value.length()).joinToString("\n") { i ->
+            value.opt(i)?.let { jsonText(it) } ?: ""
+        }
+
+        else -> value.toString()
+    }
+
+    /** 文字處理：對（已代入變數的）輸入做一次轉換，結果存進具名變數 */
+    private fun doTextTransform(action: Action.TextTransform, ctx: RunContext): String {
+        val name = action.variableName.trim()
+        if (name.isBlank()) error("未設定要存入的變數名稱")
+        val input = action.input
+        val result = when (action.op) {
+            TextOp.UPPER -> input.uppercase()
+            TextOp.LOWER -> input.lowercase()
+            TextOp.TRIM -> input.trim()
+            TextOp.LENGTH -> input.length.toString()
+            TextOp.REPLACE -> {
+                if (action.arg1.isEmpty()) error("未設定要找的文字")
+                input.replace(action.arg1, action.arg2)
+            }
+
+            TextOp.SUBSTRING -> substringOf(input, action.arg1, action.arg2)
+            TextOp.REGEX_EXTRACT -> regexExtract(input, action.arg1, action.arg2)
+        }
+        ctx.vars[name] = result
+        return "$name = ${redactText(result, 40)}"
+    }
+
+    /**
+     * 擷取子字串：起訖是第幾個字（1 起算、含頭含尾），留空代表從頭／到尾。
+     * 超出範圍不算錯，夾回合法範圍（起點在終點之後就得到空字串）——
+     * 資料長度本來就會變動，為此中斷整條流程不划算。
+     */
+    private fun substringOf(input: String, fromArg: String, toArg: String): String {
+        val from = (fromArg.trim().toIntOrNull() ?: 1).coerceAtLeast(1)
+        val to = (toArg.trim().toIntOrNull() ?: input.length).coerceAtMost(input.length)
+        return if (from > to) "" else input.substring(from - 1, to)
+    }
+
+    /** 正規式擷取：取第一個符合的第 N 組（預設 0＝整段）；沒有符合或組別不存在都得到空字串 */
+    private fun regexExtract(input: String, pattern: String, groupArg: String): String {
+        if (pattern.isBlank()) error("未設定正規式")
+        val regex = runCatching { Regex(pattern) }.getOrElse { error("正規式不合法：$pattern") }
+        val match = regex.find(input) ?: return ""
+        val group = groupArg.trim().toIntOrNull() ?: 0
+        return match.groupValues.getOrNull(group).orEmpty()
+    }
+
+    /**
+     * 日期時間：把「現在 + 偏移」依 pattern 格式化後存進具名變數。
+     * pattern 本身不合法、或格式要的欄位當地日期時間給不出來（例如時區），都記為失敗並附上原格式。
+     */
+    private fun doDateFormat(action: Action.DateFormat, ctx: RunContext): String {
+        val name = action.variableName.trim()
+        if (name.isBlank()) error("未設定要存入的變數名稱")
+        val moment = LocalDateTime.now()
+            .plusDays(action.offsetDays.toLong())
+            .plusMinutes(action.offsetMinutes.toLong())
+        val text = runCatching {
+            DateTimeFormatter.ofPattern(action.pattern, java.util.Locale.getDefault())
+                .format(moment)
+        }.getOrElse { error("日期格式不合法：${action.pattern}") }
+        ctx.vars[name] = text
+        return "$name = $text"
+    }
+
+    /**
      * 詢問輸入：暫停並跳出對話框請使用者輸入文字，答案存進具名變數。
      * 使用者取消 / 逾時未回應時記為失敗（不影響其餘動作）。
      */
@@ -1626,6 +1734,15 @@ object RoutineExecutor {
 
         is Action.Expression -> "運算式：${redactText(action.text, 40)}"
 
+        is Action.JsonGet ->
+            "從 JSON 取值 ${action.variableName.ifBlank { "(未命名)" }}：${redactText(action.path, 40)}"
+
+        is Action.TextTransform ->
+            "文字處理 ${action.variableName.ifBlank { "(未命名)" }}：${textOpLabel(action.op)}"
+
+        is Action.DateFormat ->
+            "日期時間 ${action.variableName.ifBlank { "(未命名)" }}：${action.pattern}"
+
         is Action.AskInput -> "詢問輸入：${redactText(action.prompt)}"
         is Action.ChooseMenu -> "選單選擇：${redactText(action.prompt)}"
 
@@ -1709,6 +1826,17 @@ object RoutineExecutor {
     }
 
     fun lensLabel(lensBack: Boolean): String = if (lensBack) "後鏡頭" else "前鏡頭"
+
+    /** 文字處理操作的顯示名稱（紀錄、積木、編輯畫面的 chip 共用） */
+    fun textOpLabel(op: TextOp): String = when (op) {
+        TextOp.UPPER -> "大寫"
+        TextOp.LOWER -> "小寫"
+        TextOp.TRIM -> "去空白"
+        TextOp.REPLACE -> "取代"
+        TextOp.SUBSTRING -> "擷取"
+        TextOp.LENGTH -> "長度"
+        TextOp.REGEX_EXTRACT -> "正規式擷取"
+    }
 
     fun soundTypeLabel(type: String): String = when (type) {
         Action.SOUND_ALARM -> "鬧鐘聲"

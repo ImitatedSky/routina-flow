@@ -10,6 +10,7 @@ import com.routina.app.model.MathOp
 import com.routina.app.model.GeoCircle
 import com.routina.app.model.RingerModeType
 import com.routina.app.model.Routine
+import com.routina.app.model.TextOp
 import com.routina.app.model.TimeMode
 import com.routina.app.model.Trigger
 import com.routina.app.model.TriggerSource
@@ -145,6 +146,9 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.SetGlobalVariable -> "設定全域變數"
     is Action.Calculate -> "計算"
     is Action.Expression -> "運算式"
+    is Action.JsonGet -> "從 JSON 取值"
+    is Action.TextTransform -> "文字處理"
+    is Action.DateFormat -> "日期時間"
     is Action.AskInput -> "詢問輸入"
     is Action.ChooseMenu -> "選單選擇"
     is Action.IfBegin -> "如果"
@@ -186,6 +190,9 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.SetGlobalVariable -> "設定全域變數"
     is Action.Calculate -> "計算"
     is Action.Expression -> "運算式"
+    is Action.JsonGet -> "從 JSON 取值"
+    is Action.TextTransform -> "文字處理"
+    is Action.DateFormat -> "日期時間"
     is Action.AskInput -> "詢問輸入"
     is Action.ChooseMenu -> "選單選擇"
     is Action.IfBegin -> "如果"
@@ -244,6 +251,22 @@ fun actionParamText(action: Action): String = when (action) {
     )
 
     is Action.Expression -> truncate(action.text.flattenLines().ifBlank { "未設定" }, 24)
+
+    // 資料處理：參數欄顯示「存到哪個變數＋這塊在做什麼」
+    is Action.JsonGet -> truncate(
+        "${action.variableName.ifBlank { "未命名" }} = ${action.path.ifBlank { "未設定路徑" }}",
+        20
+    )
+
+    is Action.TextTransform -> truncate(
+        "${action.variableName.ifBlank { "未命名" }} = ${textOpName(action.op)}",
+        20
+    )
+
+    is Action.DateFormat -> truncate(
+        "${action.variableName.ifBlank { "未命名" }} = ${action.pattern}",
+        20
+    )
 
     // 積木參數欄顯示提示文字（截斷）；未填提示時退回顯示變數名稱
     is Action.AskInput ->
@@ -325,6 +348,8 @@ fun volumeStreamName(stream: VolumeStream): String = RoutineExecutor.volumeStrea
 fun mediaKeyName(key: String): String = RoutineExecutor.mediaKeyLabel(key)
 
 fun lensName(lensBack: Boolean): String = RoutineExecutor.lensLabel(lensBack)
+
+fun textOpName(op: TextOp): String = RoutineExecutor.textOpLabel(op)
 
 fun soundTypeName(type: String): String = RoutineExecutor.soundTypeLabel(type)
 

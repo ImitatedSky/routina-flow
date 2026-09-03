@@ -9,7 +9,7 @@ import com.routina.app.model.Trigger
 /**
  * 積木色表（唯一來源）。
  *
- * 25 種觸發 × 15 種動作時「一個型別一個獨立色相」已超出人眼可辨識的範圍，
+ * 25 種觸發 × 40 種動作時「一個型別一個獨立色相」已超出人眼可辨識的範圍，
  * 因此改為**功能分組色系**：一組一色相、組內只差色階，分組與調色盤的分組小標一致。
  *
  * 使用者明確回饋過：**文字才是主要辨識依據，顏色只負責分組輔助**。
@@ -95,6 +95,9 @@ object RoutinaColors {
     val ActionText = Color(0xFF546E7A)
     val ActionSetVariable = Color(0xFF67818C)
 
+    // ---------- 動作：資料處理（橄欖綠，與變數藍灰、流程控制棕都分得開） ----------
+    val ActionDataProcess = Color(0xFF6E7B3F)
+
     // ---------- 動作：流程控制（棕，與判斷/迴圈語意區隔於其他家族） ----------
     val ActionControl = Color(0xFF6D4C41)
 
@@ -173,6 +176,9 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.Expression -> RoutinaColors.ActionSetVariable
     is Action.AskInput -> RoutinaColors.ActionSetVariable
     is Action.ChooseMenu -> RoutinaColors.ActionSetVariable
+    is Action.JsonGet -> RoutinaColors.ActionDataProcess
+    is Action.TextTransform -> RoutinaColors.ActionDataProcess
+    is Action.DateFormat -> RoutinaColors.ActionDataProcess
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
     is Action.EndRepeat -> RoutinaColors.ActionControl

@@ -625,6 +625,48 @@ sealed class Action {
     data class Expression(val text: String = "") : Action()
 
     /**
+     * 從 JSON 取值：把 [source]（JSON 文字，通常是 HTTP 動作的 `{{result}}`）依 [path]
+     * 取出一個值，存進具名變數 [variableName]（後續以 `{{var:名稱}}` 引用）。
+     *
+     * [path] 為 `data.items[0].name` 這類點／中括號路徑。取到陣列時輸出「一行一個項目」
+     * （全 App 清單變數的共同格式），取到物件則輸出它的 JSON 文字；路徑不存在記為失敗。
+     */
+    @Serializable
+    @SerialName("json_get")
+    data class JsonGet(
+        val source: String = "",
+        val path: String = "",
+        val variableName: String = ""
+    ) : Action()
+
+    /**
+     * 文字處理：對 [input]（可含 token）做一次 [op] 轉換，結果存進具名變數 [variableName]。
+     * [arg1]／[arg2] 的意義依 [op] 而定（見 [TextOp]），用不到的操作留空即可。
+     */
+    @Serializable
+    @SerialName("text_transform")
+    data class TextTransform(
+        val input: String = "",
+        val op: TextOp = TextOp.TRIM,
+        val arg1: String = "",
+        val arg2: String = "",
+        val variableName: String = ""
+    ) : Action()
+
+    /**
+     * 日期時間：把「現在」加上 [offsetDays] 天、[offsetMinutes] 分（負數＝往前）後，
+     * 依 java.time 的 [pattern] 格式化存進具名變數 [variableName]。格式不合法記為失敗。
+     */
+    @Serializable
+    @SerialName("date_format")
+    data class DateFormat(
+        val variableName: String = "",
+        val pattern: String = "yyyy/MM/dd HH:mm",
+        val offsetMinutes: Int = 0,
+        val offsetDays: Int = 0
+    ) : Action()
+
+    /**
      * 詢問輸入：執行到這裡時暫停，跳出對話框請使用者輸入一段文字，
      * 把答案存進具名變數 [variableName]（後續以 `{{var:名稱}}` 引用）。
      * [prompt] 可含變數 token；[defaultValue] 預先填入輸入框（也可含 token）。
@@ -794,6 +836,29 @@ enum class MathOp {
     @SerialName("div") DIVIDE,
     @SerialName("mod") MODULO
 }
+
+/**
+ * 「文字處理」動作的操作。
+ *
+ * 取代 REPLACE：arg1＝要找的文字、arg2＝換成什麼。
+ * 擷取 SUBSTRING：arg1＝起、arg2＝迄（第幾個字，含頭含尾，超出範圍會夾回合法範圍）。
+ * 正規式擷取 REGEX_EXTRACT：arg1＝pattern、arg2＝取第幾組（預設 0＝整段），不符得到空字串。
+ * 其餘操作用不到參數。
+ */
+@Serializable
+enum class TextOp {
+    @SerialName("upper") UPPER,
+    @SerialName("lower") LOWER,
+    @SerialName("trim") TRIM,
+    @SerialName("replace") REPLACE,
+    @SerialName("substring") SUBSTRING,
+    @SerialName("length") LENGTH,
+    @SerialName("regex_extract") REGEX_EXTRACT
+}
+
+/** 是否用得到 arg1／arg2；用不到的操作在編輯畫面不顯示參數欄，免得使用者以為要填 */
+val TextOp.usesArgs: Boolean
+    get() = this in setOf(TextOp.REPLACE, TextOp.SUBSTRING, TextOp.REGEX_EXTRACT)
 
 @Serializable
 enum class RingerModeType {
