@@ -257,12 +257,14 @@ object RoutineExecutor {
 
                 is Action.ForEachBegin -> {
                     val end = matchingEnd(actions, i, to)
-                    val items = parseList(listRaw(action.listVariable.trim(), ctx))
+                    // 清單來源可含 token，先解析成文字再依換行或逗號切成項目
+                    val items = parseForEachItems(VariableResolver.resolve(action.listSource, ctx))
+                    val itemVar = action.itemVariable.trim().ifBlank { "item" }
                     val savedIndex = ctx.trigger[LOOP_INDEX_KEY]
-                    val savedItem = ctx.trigger[LOOP_ITEM_KEY]
+                    val savedItem = ctx.vars[itemVar]
                     var k = 0
                     while (k < items.size && budget[0] > 0) {
-                        ctx.trigger[LOOP_ITEM_KEY] = items[k]
+                        ctx.vars[itemVar] = items[k]
                         ctx.trigger[LOOP_INDEX_KEY] = (k + 1).toString()
                         runProgram(
                             actions, i + 1, end, context, routine, source, canLaunchActivity,
@@ -271,7 +273,8 @@ object RoutineExecutor {
                         k++
                     }
                     restoreLoopIndex(ctx, savedIndex)
-                    restoreLoopItem(ctx, savedItem)
+                    // 還原 itemVariable 先前的值（巢狀時回外層值，最外層則移除）
+                    if (savedItem != null) ctx.vars[itemVar] = savedItem else ctx.vars.remove(itemVar)
                     i = end + 1
                 }
 
@@ -387,16 +390,8 @@ object RoutineExecutor {
         if (saved != null) ctx.trigger[LOOP_INDEX_KEY] = saved else ctx.trigger.remove(LOOP_INDEX_KEY)
     }
 
-    /** 逐項重複結束後還原 {{迴圈:項目}}（規則同 [restoreLoopIndex]） */
-    private fun restoreLoopItem(ctx: RunContext, saved: String?) {
-        if (saved != null) ctx.trigger[LOOP_ITEM_KEY] = saved else ctx.trigger.remove(LOOP_ITEM_KEY)
-    }
-
     /** 迴圈計數在情境中的鍵；以 {{迴圈:次數}} 引用 */
     private const val LOOP_INDEX_KEY = "迴圈:次數"
-
-    /** 逐項重複的目前項目在情境中的鍵；以 {{迴圈:項目}} 引用 */
-    private const val LOOP_ITEM_KEY = "迴圈:項目"
 
     /** 讀清單變數的原始文字：先找一般變數、再找全域變數，都沒有就視為空清單 */
     private fun listRaw(name: String, ctx: RunContext): String =
@@ -405,6 +400,10 @@ object RoutineExecutor {
     /** 清單文字 → 項目（一行一個，去掉前後空白、略過空行） */
     private fun parseList(text: String): List<String> =
         text.lines().map { it.trim() }.filter { it.isNotBlank() }
+
+    /** 逐項重複的清單切割：換行或逗號都切、去前後空白、略過空項 */
+    private fun parseForEachItems(text: String): List<String> =
+        text.split('\n', ',').map { it.trim() }.filter { it.isNotBlank() }
 
     /** 「執行程序」的最大巢狀深度，配合呼叫堆疊擋住循環／過深呼叫 */
     private const val MAX_CALL_DEPTH = 10
@@ -1761,7 +1760,9 @@ object RoutineExecutor {
         is Action.EndWhile -> "結束重複"
         is Action.RepeatBegin -> "重複 ${numLabel(action.countExpr, action.count)} 次"
         is Action.EndRepeat -> "結束重複 N 次"
-        is Action.ForEachBegin -> "逐項重複：${varLabel(action.listVariable)}"
+        is Action.ForEachBegin ->
+            "逐項重複 ${redactText(action.listSource).ifBlank { "(未設定)" }} → ${varLabel(action.itemVariable)}"
+
         is Action.EndForEach -> "結束逐項"
         is Action.RunRoutine -> "執行程序：${action.routineName.ifBlank { "(未選)" }}"
     }

@@ -279,7 +279,10 @@ fun actionParamText(action: Action): String = when (action) {
     is Action.ElseIf -> conditionSummary(action.condition)
     is Action.WhileBegin -> conditionSummary(action.condition)
     is Action.RepeatBegin -> numParam(action.countExpr, "${action.count} 次")
-    is Action.ForEachBegin -> truncate(action.listVariable.ifBlank { "未設定" }, 20)
+    is Action.ForEachBegin -> {
+        val src = action.listSource.flattenLines().ifBlank { "未設定" }
+        truncate("$src → ${action.itemVariable.ifBlank { "item" }}", 20)
+    }
     is Action.Else -> "其餘情況"
     is Action.EndIf, is Action.EndWhile, is Action.EndRepeat, is Action.EndForEach -> ""
     is Action.RunRoutine -> action.routineName.ifBlank { "選擇程序" }

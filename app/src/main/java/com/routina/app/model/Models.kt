@@ -744,16 +744,21 @@ sealed class Action {
     data object EndRepeat : Action()
 
     /**
-     * 逐項重複：把清單變數 [listVariable] 的每個項目各跑一遍 結束逐項 之間的動作。
-     * 迴圈內以 `{{迴圈:項目}}` 取得目前項目、`{{迴圈:次數}}` 取得目前是第幾項。
+     * 逐項重複：把 [listSource] 解析後的清單（換行或逗號分隔）每個項目各跑一遍 結束逐項 之間的動作。
+     * [listSource] 可含 token（如 `{{result}}`、`{{var:待辦}}`），執行時先解析再切割。
+     * 每次把目前項目存進具名變數 [itemVariable]（以 `{{var:名稱}}` 取得），
+     * 並以 `{{迴圈:次數}}` 取得目前是第幾項（沿用重複迴圈的計數鍵）。
      */
     @Serializable
-    @SerialName("for_each_begin")
-    data class ForEachBegin(val listVariable: String = "") : Action()
+    @SerialName("foreach_begin")
+    data class ForEachBegin(
+        val listSource: String = "",
+        val itemVariable: String = "item"
+    ) : Action()
 
     /** 結束逐項 */
     @Serializable
-    @SerialName("end_for_each")
+    @SerialName("end_foreach")
     data object EndForEach : Action()
 
     /**

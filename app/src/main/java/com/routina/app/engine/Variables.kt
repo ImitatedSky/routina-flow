@@ -51,7 +51,7 @@ object VariableResolver {
         "通知標題", "通知內容", "通知來源App",
         "電量", "Wi-Fi名稱", "藍牙裝置", "地點名稱", "標籤名稱",
         "時間", "日期", "星期",
-        "迴圈:次數", "迴圈:項目"
+        "迴圈:次數"
     )
 
     fun resolve(template: String, ctx: RunContext): String {
@@ -86,8 +86,7 @@ object VariableResolver {
         "藍牙裝置" to "我的耳機",
         "地點名稱" to "公司",
         "標籤名稱" to "床頭標籤",
-        "迴圈:次數" to "2",
-        "迴圈:項目" to "蘋果"
+        "迴圈:次數" to "2"
     )
 
     /**

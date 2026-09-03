@@ -949,18 +949,29 @@ fun ActionEditDialog(
                 }
 
                 is Action.ForEachBegin -> Column {
+                    VariableTextField(
+                        value = current.listSource,
+                        onValueChange = { draft = current.copy(listSource = it) },
+                        label = "清單來源",
+                        tokenGroups = tokenGroups,
+                        placeholder = "例如 {{var:待辦}}，或直接輸入 蘋果,香蕉,橘子",
+                        minLines = 1,
+                        maxLines = 4
+                    )
+                    Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
-                        value = current.listVariable,
-                        onValueChange = { draft = current.copy(listVariable = it) },
-                        label = { Text("清單變數名稱") },
-                        placeholder = { Text("例如：待辦") },
+                        value = current.itemVariable,
+                        onValueChange = { draft = current.copy(itemVariable = it) },
+                        label = { Text("項目變數名稱") },
+                        placeholder = { Text("例如：item") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "把清單的每個項目各跑一遍到「結束逐項」之間的動作。" +
-                            "動作中可用 {{迴圈:項目}} 取得目前項目、{{迴圈:次數}} 取得目前是第幾項。",
+                        "把清單來源（換行或逗號分隔）的每個項目各跑一遍到「結束逐項」之間的動作。" +
+                            "動作中用 {{var:${current.itemVariable.ifBlank { "item" }}}} 取得目前項目、" +
+                            "{{迴圈:次數}} 取得目前是第幾項。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1064,8 +1075,11 @@ fun availableTokens(
                 else -> null
             }
         }
+        // 逐項重複的項目變數：迴圈內的動作可用 {{var:項目}} 取得目前項目
+        val forEachItemNames = precedingActions.filterIsInstance<Action.ForEachBegin>()
+            .map { it.itemVariable.trim() }
         val varNames = (setVarNames + calcVarNames + exprVarNames + askVarNames + menuVarNames +
-            listVarNames)
+            listVarNames + forEachItemNames)
             .filter { it.isNotBlank() }
             .distinct()
         if (varNames.isNotEmpty()) {
@@ -1087,8 +1101,7 @@ fun availableTokens(
                     VarToken("日期", "{{日期}}"),
                     VarToken("星期", "{{星期}}"),
                     VarToken("電量", "{{電量}}"),
-                    VarToken("迴圈次數", "{{迴圈:次數}}"),
-                    VarToken("迴圈項目", "{{迴圈:項目}}")
+                    VarToken("迴圈次數", "{{迴圈:次數}}")
                 )
             )
         )
@@ -1543,8 +1556,8 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     // 互動動作：一定要有存入的變數名稱；選單另需至少一個非空選項
     is Action.AskInput -> action.variableName.isNotBlank()
     is Action.ChooseMenu -> action.variableName.isNotBlank() && action.options.any { it.isNotBlank() }
-    // 逐項重複要有清單才知道跑什麼；其餘流程控制標記沒有必填欄位（條件空＝恆成立）
-    is Action.ForEachBegin -> action.listVariable.isNotBlank()
+    // 逐項重複要有項目變數名稱才能把項目存進去；其餘流程控制標記沒有必填欄位（條件空＝恆成立）
+    is Action.ForEachBegin -> action.itemVariable.isNotBlank()
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
     is Action.EndRepeat, is Action.EndForEach -> true

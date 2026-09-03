@@ -18,10 +18,9 @@
   - **取清單項目 `ListGet`**（`list_get`）：取第 N 項（1 起算，可用 `{{迴圈:次數}}`）存進變數；
     不是數字或超出範圍記為失敗。
   - **清單長度 `ListCount`**（`list_count`）：把項目數存進變數。
-- **逐項重複 `ForEachBegin` / `EndForEach`**（`for_each_begin` / `end_for_each`）：
-  沿用既有的配對標記直譯器，把清單的每個項目各跑一遍區塊內的動作。迴圈內以
-  `{{迴圈:項目}}` 取得目前項目、`{{迴圈:次數}}` 取得第幾項；兩個鍵都比照 `重複 N 次`
-  在迴圈前後存回／還原，巢狀迴圈的外層值不會被內層蓋掉。
+- **逐項重複 `ForEachBegin` / `EndForEach`**：由並行的 `add-foreach-loop` 變更交付
+  （`listSource` 解析後依換行或逗號切項、項目存進具名變數、位置沿用 `{{迴圈:次數}}`）。
+  本變更只負責清單動作，讓逐項重複有清單可跑。
 
 ## Non-goals
 
@@ -32,9 +31,9 @@
 
 ## Impact
 
-- 受影響 specs：routine-actions（五個清單動作）、routine-engine（逐項重複的直譯器語意）
-- 受影響程式碼：model（七個新 `Action`）、engine（`RoutineExecutor` 的 `runProgram`
-  逐項重複分支、`matchingEnd`／`nextBranchOrEnd`／dispatch／`describe`／`resolveAction`／
-  五個 `doListXxx`，`Variables` 的 `迴圈:項目`）、ui（調色盤、ActionEditor 編輯器＋驗證＋
-  可插入變數、UiLabels、Color、EditScreen 的 `pairedEnd`／`matchingEndInList`／`indentDepths`）
+- 受影響 specs：routine-actions（五個清單動作）
+- 受影響程式碼：model（五個新清單 `Action`）、engine（`RoutineExecutor` 的
+  `parseList`／`listRaw`／五個 `doListXxx`、dispatch／`describe`／`resolveAction`）、
+  ui（調色盤「清單」組、ActionEditor 五個編輯器＋驗證＋可插入清單變數、UiLabels、Color）
+- 逐項重複（`ForEachBegin`／`EndForEach`）與其配對標記在 `add-foreach-loop` 交付
 - 序列化只新增、欄位皆有預設；舊 `routines.json` 照常讀入；無新依賴
