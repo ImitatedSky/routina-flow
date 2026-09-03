@@ -13,6 +13,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.location.Location
 import android.media.AudioManager
 import android.media.RingtoneManager
 import android.net.Uri
@@ -27,6 +28,9 @@ import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.routina.app.R
 import com.routina.app.RoutinaApp
 import com.routina.app.data.RoutineRepository
@@ -34,6 +38,7 @@ import com.routina.app.model.Action
 import com.routina.app.model.ActionResult
 import com.routina.app.model.CompareOp
 import com.routina.app.model.Condition
+import com.routina.app.model.LocationFormat
 import com.routina.app.model.MathOp
 import com.routina.app.model.RingerModeType
 import com.routina.app.model.Routine
@@ -45,6 +50,7 @@ import com.routina.app.model.VolumeStream
 import com.routina.app.model.usesRightOperand
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
@@ -54,6 +60,7 @@ import java.net.URL
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 
 /**
@@ -478,11 +485,17 @@ object RoutineExecutor {
                 is Action.MediaVolume -> doMediaVolume(context, resolved, ctx)
                 is Action.RingerMode -> doRingerMode(context, resolved)
                 is Action.Bluetooth -> doBluetooth(context, routine, index, resolved)
+                is Action.WifiToggle -> doWifiToggle(context, routine, index, resolved, canLaunchActivity)
                 is Action.Flashlight -> doFlashlight(context, resolved)
                 is Action.Speak -> doSpeak(context, resolved)
                 is Action.Vibrate -> doVibrate(context, resolved, ctx)
                 is Action.Dnd -> doDnd(context, resolved)
                 is Action.Brightness -> doBrightness(context, resolved, ctx)
+                is Action.AutoRotate -> doAutoRotate(context, resolved)
+                is Action.ScreenTimeout -> doScreenTimeout(context, resolved, ctx)
+                is Action.Dial -> doDial(context, routine, index, resolved, canLaunchActivity)
+                is Action.SendSms -> doSendSms(context, routine, index, resolved, canLaunchActivity)
+                is Action.GetLocation -> doGetLocation(context, resolved, ctx)
                 is Action.Http -> doHttp(resolved, ctx)
                 is Action.MediaKey -> doMediaKey(context, resolved)
                 is Action.Wait -> doWait(resolved, allowWait, ctx)
@@ -543,6 +556,12 @@ object RoutineExecutor {
 
         is Action.Clipboard -> action.copy(text = VariableResolver.resolve(action.text, ctx))
         is Action.SetAlarm -> action.copy(label = VariableResolver.resolve(action.label, ctx))
+        is Action.Dial -> action.copy(number = VariableResolver.resolve(action.number, ctx))
+        is Action.SendSms -> action.copy(
+            number = VariableResolver.resolve(action.number, ctx),
+            message = VariableResolver.resolve(action.message, ctx)
+        )
+
         is Action.Text -> action.copy(template = VariableResolver.resolve(action.template, ctx))
         is Action.SetVariable ->
             action.copy(template = VariableResolver.resolve(action.template, ctx))
@@ -798,6 +817,31 @@ object RoutineExecutor {
         return null
     }
 
+    /**
+     * Wi-Fi 開關。
+     *
+     * Android 10 起系統禁止第三方 App 直接切換 Wi-Fi，只能把使用者帶到系統的 Wi-Fi 面板
+     * （API 29+）或 Wi-Fi 設定頁自行切換——絕不記成假成功，描述會註明需自行切換。
+     * 沿用「開啟 App／網址」的背景 Activity 啟動處理：前景直接開面板、背景改發可點擊通知。
+     */
+    private fun doWifiToggle(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.WifiToggle,
+        canLaunchActivity: Boolean
+    ): String? {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            Intent(Settings.Panel.ACTION_WIFI)
+        } else {
+            Intent(Settings.ACTION_WIFI_SETTINGS)
+        }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val title = if (action.on) "開啟 Wi-Fi" else "關閉 Wi-Fi"
+        // 前景直接開面板時 launchOrNotify 回 null，補一句說明使用者仍要自己切換；背景則回它的通知說明
+        return launchOrNotify(context, routine, index, intent, title, canLaunchActivity, verb = "切換 Wi-Fi")
+            ?: "系統不允許 App 直接切換，已開啟 Wi-Fi 面板請自行切換"
+    }
+
     /** 手電筒：取第一個有閃光燈的鏡頭（通常是主鏡頭） */
     private fun doFlashlight(context: Context, action: Action.Flashlight): String? {
         val manager = context.getSystemService(CameraManager::class.java)
@@ -865,6 +909,142 @@ object RoutineExecutor {
         if (!written) error("系統拒絕寫入亮度設定")
         return null
     }
+
+    /** 自動旋轉：寫入 ACCELEROMETER_ROTATION（1/0），權限處理同螢幕亮度 */
+    private fun doAutoRotate(context: Context, action: Action.AutoRotate): String? {
+        if (!canWriteSettings(context)) {
+            notifyWriteSettingsNeeded(context)
+            error("缺少「修改系統設定」權限，已發送授權引導通知")
+        }
+        val written = Settings.System.putInt(
+            context.contentResolver,
+            Settings.System.ACCELEROMETER_ROTATION,
+            if (action.on) 1 else 0
+        )
+        if (!written) error("系統拒絕寫入自動旋轉設定")
+        return null
+    }
+
+    /** 螢幕逾時：系統設定以毫秒儲存，這裡收秒數（夾在安全範圍內）再換算 */
+    private fun doScreenTimeout(
+        context: Context,
+        action: Action.ScreenTimeout,
+        ctx: RunContext
+    ): String? {
+        if (!canWriteSettings(context)) {
+            notifyWriteSettingsNeeded(context)
+            error("缺少「修改系統設定」權限，已發送授權引導通知")
+        }
+        val seconds = resolveNum(
+            action.secondsExpr, action.seconds, Action.SCREEN_TIMEOUT_SAFE, ctx
+        )
+        val written = Settings.System.putInt(
+            context.contentResolver,
+            Settings.System.SCREEN_OFF_TIMEOUT,
+            seconds * 1000
+        )
+        if (!written) error("系統拒絕寫入螢幕逾時設定")
+        return null
+    }
+
+    /**
+     * 撥號：帶號碼開啟系統撥號畫面（ACTION_DIAL），不自動撥出、不需要通話權限。
+     * 沿用「開啟 App／網址」的背景 Activity 啟動處理——前景直接開，背景改發可點擊通知。
+     */
+    private fun doDial(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.Dial,
+        canLaunchActivity: Boolean
+    ): String? {
+        val number = action.number.trim()
+        require(number.isNotBlank()) { "未輸入電話號碼" }
+        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(number)}"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return launchOrNotify(
+            context, routine, index, intent, "撥號 $number", canLaunchActivity, verb = "撥號"
+        )
+    }
+
+    /**
+     * 傳簡訊：開啟簡訊 App 並填好收件人與內容（ACTION_SENDTO），由使用者自己按送出。
+     * 不使用 SEND_SMS 權限直接發訊；背景啟動限制的處理同撥號。
+     */
+    private fun doSendSms(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.SendSms,
+        canLaunchActivity: Boolean
+    ): String? {
+        val number = action.number.trim()
+        require(number.isNotBlank()) { "未輸入收件號碼" }
+        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(number)}"))
+            .putExtra("sms_body", action.message)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return launchOrNotify(
+            context, routine, index, intent, "傳簡訊給 $number", canLaunchActivity, verb = "編輯簡訊"
+        )
+    }
+
+    /**
+     * 取得目前位置：要一次當下座標存進具名變數。
+     *
+     * 用 PRIORITY_BALANCED_POWER_ACCURACY 而非最高精度：例行程序要的是「我人在哪」，
+     * 不值得為幾公尺差距開 GPS。缺權限、定位關閉或逾時都記為失敗——
+     * 絕不拿舊的快取位置冒充當下位置。
+     */
+    private suspend fun doGetLocation(
+        context: Context,
+        action: Action.GetLocation,
+        ctx: RunContext
+    ): String {
+        val name = action.variableName.trim()
+        if (name.isBlank()) error("未設定要存入的變數名稱")
+        if (!GeofenceManager.hasForegroundLocation(context)) {
+            error("未授權位置權限，請到系統設定允許 Routina 存取位置")
+        }
+        val location = withTimeoutOrNull(LOCATION_TIMEOUT_MS) { currentLocation(context) }
+            ?: error("取不到目前位置（逾時或定位關閉）")
+        val value = when (action.format) {
+            LocationFormat.LAT -> formatCoordinate(location.latitude)
+            LocationFormat.LNG -> formatCoordinate(location.longitude)
+            LocationFormat.LAT_LNG ->
+                "${formatCoordinate(location.latitude)},${formatCoordinate(location.longitude)}"
+        }
+        ctx.vars[name] = value
+        return "$name = $value"
+    }
+
+    /**
+     * 把 Play Services 的 getCurrentLocation（Task）接成 suspend 函式。
+     *
+     * 專案沒有 kotlinx-coroutines-play-services，為了一個呼叫多帶一個相依不划算，
+     * 直接掛三個 listener 即可；取不到位置一律回 null，由呼叫端記為失敗。
+     */
+    private suspend fun currentLocation(context: Context): Location? =
+        suspendCancellableCoroutine { cont ->
+            val cancellation = CancellationTokenSource()
+            cont.invokeOnCancellation { runCatching { cancellation.cancel() } }
+            try {
+                LocationServices.getFusedLocationProviderClient(context)
+                    .getCurrentLocation(
+                        Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                        cancellation.token
+                    )
+                    .addOnSuccessListener { if (cont.isActive) cont.resume(it) }
+                    .addOnFailureListener { if (cont.isActive) cont.resume(null) }
+                    .addOnCanceledListener { if (cont.isActive) cont.resume(null) }
+            } catch (t: Throwable) {
+                // 沒有 GMS、或權限在呼叫瞬間被撤銷：當成取不到位置，不讓它變成崩潰
+                if (cont.isActive) cont.resume(null)
+            }
+        }
+
+    /** 經緯度輸出固定 6 位小數（約 0.1 公尺解析度，足夠且不帶浮點雜訊） */
+    private fun formatCoordinate(value: Double): String =
+        String.format(java.util.Locale.US, "%.6f", value)
 
     /**
      * HTTP 請求（webhook）：連線 / 讀取各 10 秒逾時，2xx 視為成功。
@@ -1558,7 +1738,7 @@ object RoutineExecutor {
             requestCode = REQUEST_WRITE_SETTINGS,
             intent = settingsIntent,
             title = "需要「修改系統設定」權限",
-            text = "點此前往設定，允許 Routina 調整螢幕亮度"
+            text = "點此前往設定，允許 Routina 調整螢幕亮度、自動旋轉與螢幕逾時"
         )
     }
 
@@ -1806,11 +1986,19 @@ object RoutineExecutor {
 
         is Action.RingerMode -> "響鈴模式：${ringerLabel(action.mode)}"
         is Action.Bluetooth -> "藍牙：${if (action.enable) "開啟" else "關閉"}"
+        is Action.WifiToggle -> "Wi-Fi：${if (action.on) "開啟" else "關閉"}"
         is Action.Flashlight -> "手電筒：${if (action.on) "開啟" else "關閉"}"
         is Action.Speak -> "朗讀文字：${redactText(action.text)}"
         is Action.Vibrate -> "震動：${numLabel(action.millisExpr, action.millis)} 毫秒"
         is Action.Dnd -> "勿擾模式：${if (action.on) "開啟" else "關閉"}"
         is Action.Brightness -> "螢幕亮度：${numLabel(action.percentExpr, action.percent)}%"
+        is Action.AutoRotate -> "自動旋轉：${if (action.on) "開啟" else "關閉"}"
+        is Action.ScreenTimeout -> "螢幕逾時：${numLabel(action.secondsExpr, action.seconds)} 秒"
+        is Action.Dial -> "撥號：${redactText(action.number)}"
+        is Action.SendSms -> "傳簡訊：${redactText(action.number)}"
+        is Action.GetLocation ->
+            "取得目前位置：存到 ${action.variableName.ifBlank { "(未命名)" }}"
+
         is Action.Http -> "HTTP ${action.method}：${redactUrl(action.url, stripQuery = true)}"
         is Action.MediaKey -> "播放控制：${mediaKeyLabel(action.key)}"
         is Action.Wait -> "等待 ${numLabel(action.secondsExpr, action.seconds)} 秒"
@@ -1999,6 +2187,9 @@ object RoutineExecutor {
 
     /** 互動動作（詢問輸入 / 選單選擇）等待使用者回應的上限，逾時記為失敗，不讓流程永遠卡住 */
     private const val INPUT_TIMEOUT_MS = 120_000L
+
+    /** 取得目前位置的等待上限；室內收不到訊號時不會拖著整條流程 */
+    private const val LOCATION_TIMEOUT_MS = 15_000L
 
     /** HTTP 回應保留為輸出時的長度上限，避免執行情境無限膨脹 */
     private const val MAX_HTTP_OUTPUT_CHARS = 10_000

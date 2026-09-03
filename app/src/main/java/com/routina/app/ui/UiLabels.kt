@@ -6,6 +6,7 @@ import com.routina.app.model.AppTarget
 import com.routina.app.model.BtDevice
 import com.routina.app.model.CompareOp
 import com.routina.app.model.Condition
+import com.routina.app.model.LocationFormat
 import com.routina.app.model.MathOp
 import com.routina.app.model.GeoCircle
 import com.routina.app.model.RingerModeType
@@ -127,11 +128,17 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.MediaVolume -> "音量"
     is Action.RingerMode -> "響鈴模式"
     is Action.Bluetooth -> "藍牙"
+    is Action.WifiToggle -> "Wi-Fi"
     is Action.Flashlight -> "手電筒"
     is Action.Speak -> "朗讀文字"
     is Action.Vibrate -> "震動"
     is Action.Dnd -> "勿擾模式"
     is Action.Brightness -> "螢幕亮度"
+    is Action.AutoRotate -> "自動旋轉"
+    is Action.ScreenTimeout -> "螢幕逾時"
+    is Action.Dial -> "撥號"
+    is Action.SendSms -> "傳簡訊"
+    is Action.GetLocation -> "取得目前位置"
     is Action.Http -> "HTTP 請求"
     is Action.MediaKey -> "播放控制"
     is Action.Wait -> "等待"
@@ -178,11 +185,17 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.MediaVolume -> "${volumeStreamName(action.stream)}音量設為"
     is Action.RingerMode -> "響鈴模式切為"
     is Action.Bluetooth -> "藍牙"
+    is Action.WifiToggle -> "Wi-Fi"
     is Action.Flashlight -> "手電筒"
     is Action.Speak -> "朗讀"
     is Action.Vibrate -> "震動"
     is Action.Dnd -> "勿擾模式"
     is Action.Brightness -> "螢幕亮度設為"
+    is Action.AutoRotate -> "自動旋轉"
+    is Action.ScreenTimeout -> "螢幕逾時設為"
+    is Action.Dial -> "撥號"
+    is Action.SendSms -> "傳簡訊給"
+    is Action.GetLocation -> "目前位置存到"
     is Action.Http -> "HTTP ${httpMethodName(action.method)}"
     is Action.MediaKey -> "播放控制"
     is Action.Wait -> "等待"
@@ -230,11 +243,17 @@ fun actionParamText(action: Action): String = when (action) {
     is Action.MediaVolume -> numParam(action.percentExpr, "${action.percent}%")
     is Action.RingerMode -> ringerModeName(action.mode)
     is Action.Bluetooth -> if (action.enable) "開啟" else "關閉"
+    is Action.WifiToggle -> if (action.on) "開啟" else "關閉"
     is Action.Flashlight -> if (action.on) "開啟" else "關閉"
     is Action.Speak -> truncate(action.text.ifBlank { "未設定" }, 20)
     is Action.Vibrate -> numParam(action.millisExpr, "${action.millis} 毫秒")
     is Action.Dnd -> if (action.on) "開啟" else "關閉"
     is Action.Brightness -> numParam(action.percentExpr, "${action.percent}%")
+    is Action.AutoRotate -> if (action.on) "開啟" else "關閉"
+    is Action.ScreenTimeout -> numParam(action.secondsExpr, "${action.seconds} 秒")
+    is Action.Dial -> truncate(action.number.ifBlank { "未設定" }, 20)
+    is Action.SendSms -> truncate(action.number.ifBlank { "未設定" }, 20)
+    is Action.GetLocation -> action.variableName.ifBlank { "未命名" }
     is Action.Http -> truncate(action.url.ifBlank { "未設定" }, 20)
     is Action.MediaKey -> mediaKeyName(action.key)
     is Action.Wait -> numParam(action.secondsExpr, "${action.seconds} 秒")
@@ -385,6 +404,13 @@ fun lensName(lensBack: Boolean): String = RoutineExecutor.lensLabel(lensBack)
 fun textOpName(op: TextOp): String = RoutineExecutor.textOpLabel(op)
 
 fun soundTypeName(type: String): String = RoutineExecutor.soundTypeLabel(type)
+
+/** 「取得目前位置」的輸出格式選項文字 */
+fun locationFormatName(format: LocationFormat): String = when (format) {
+    LocationFormat.LAT_LNG -> "緯度,經度"
+    LocationFormat.LAT -> "緯度"
+    LocationFormat.LNG -> "經度"
+}
 
 fun httpMethodName(method: String): String =
     if (method.equals(Action.METHOD_POST, ignoreCase = true)) Action.METHOD_POST else Action.METHOD_GET

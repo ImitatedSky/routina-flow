@@ -66,6 +66,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.routina.app.engine.ExpressionEval
+import com.routina.app.engine.GeofenceManager
 import com.routina.app.engine.RoutineExecutor
 import com.routina.app.engine.RunContext
 import com.routina.app.engine.VariableResolver
@@ -73,6 +74,7 @@ import com.routina.app.model.Action
 import com.routina.app.model.AppTarget
 import com.routina.app.model.CompareOp
 import com.routina.app.model.Condition
+import com.routina.app.model.LocationFormat
 import com.routina.app.model.MathOp
 import com.routina.app.model.RingerModeType
 import com.routina.app.model.TextOp
@@ -239,6 +241,18 @@ fun ActionEditDialog(
                     BluetoothPermissionNotice()
                 }
 
+                is Action.WifiToggle -> Column {
+                    OnOffChips(current.on) { draft = current.copy(on = it) }
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Android 10 起系統禁止 App 直接切換 Wi-Fi。" +
+                            "執行時會開啟系統的 Wi-Fi 面板，由你自己切換開關或選擇網路。" +
+                            "由背景觸發且系統禁止背景啟動時，會改發一則可點擊的通知。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 is Action.Flashlight -> Column {
                     OnOffChips(current.on) { draft = current.copy(on = it) }
                     Spacer(Modifier.height(12.dp))
@@ -310,13 +324,116 @@ fun ActionEditDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    SpecialAccessNotice(
-                        granted = { RoutineExecutor.canWriteSettings(it) },
-                        message = "尚未取得「修改系統設定」權限，這個動作會被記為失敗。",
-                        onGrant = {
-                            it.openPermissionSettings(Settings.ACTION_MANAGE_WRITE_SETTINGS)
-                        }
+                    WriteSettingsNotice()
+                }
+
+                is Action.AutoRotate -> Column {
+                    OnOffChips(current.on) { draft = current.copy(on = it) }
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "開啟＝畫面跟著手機轉向；關閉＝鎖定目前方向。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    WriteSettingsNotice()
+                }
+
+                is Action.ScreenTimeout -> Column {
+                    NumericVarField(
+                        label = "螢幕逾時（秒）",
+                        expr = current.secondsExpr,
+                        fallback = current.seconds,
+                        unit = " 秒",
+                        range = Action.SCREEN_TIMEOUT_SAFE,
+                        tokenGroups = tokenGroups,
+                        onExprChange = { draft = current.copy(secondsExpr = it) }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "多久沒有操作就自動關閉螢幕，可設 ${Action.SCREEN_TIMEOUT_SAFE.first}–" +
+                            "${Action.SCREEN_TIMEOUT_SAFE.last} 秒。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    WriteSettingsNotice()
+                }
+
+                is Action.Dial -> Column {
+                    VariableTextField(
+                        value = current.number,
+                        onValueChange = { draft = current.copy(number = it) },
+                        label = "電話號碼",
+                        tokenGroups = tokenGroups,
+                        placeholder = "例如：0912345678",
+                        singleLine = true,
+                        keyboardType = KeyboardType.Phone
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "開啟系統撥號畫面並帶入號碼，由你自己按下通話鍵——不會自動撥出，" +
+                            "也不需要通話權限。由背景觸發且系統禁止背景啟動時，" +
+                            "會改發一則可點擊的通知。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.SendSms -> Column {
+                    VariableTextField(
+                        value = current.number,
+                        onValueChange = { draft = current.copy(number = it) },
+                        label = "收件號碼",
+                        tokenGroups = tokenGroups,
+                        placeholder = "例如：0912345678",
+                        singleLine = true,
+                        keyboardType = KeyboardType.Phone
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    VariableTextField(
+                        value = current.message,
+                        onValueChange = { draft = current.copy(message = it) },
+                        label = "訊息內容",
+                        tokenGroups = tokenGroups,
+                        placeholder = "可插入變數，例如：我大概 {{時間}} 到",
+                        minLines = 2,
+                        maxLines = 6
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "開啟簡訊 App 並預先填好收件人與內容，由你自己按送出——不會自動傳送，" +
+                            "也不需要簡訊權限。由背景觸發且系統禁止背景啟動時，" +
+                            "會改發一則可點擊的通知。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.GetLocation -> Column {
+                    OutlinedTextField(
+                        value = current.variableName,
+                        onValueChange = { draft = current.copy(variableName = it) },
+                        label = { Text("存到變數") },
+                        placeholder = { Text("例如：目前位置") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text("格式", style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.height(4.dp))
+                    ChipRow(
+                        options = LocationFormat.entries,
+                        selected = current.format,
+                        label = { locationFormatName(it) },
+                        onSelect = { draft = current.copy(format = it) }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "取得一次目前座標（小數 6 位）存進變數，之後用 {{var:名稱}} 引用。" +
+                            "需要位置權限；定位關閉或 15 秒內取不到位置時會記為失敗。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    LocationPermissionNotice()
                 }
 
                 is Action.Http -> Column {
@@ -1213,7 +1330,8 @@ fun availableTokens(
             add(VarTokenGroup("觸發提供", it))
         }
         add(VarTokenGroup("上一個結果", listOf(VarToken("上一個動作的輸出", "{{result}}"))))
-        // 前面用「設定變數 / 計算 / 運算式 / 詢問輸入 / 選單選擇」設過的變數，都列進「已設定的變數」方便插入
+        // 前面用「設定變數 / 計算 / 運算式 / 詢問輸入 / 選單選擇 / 取得目前位置」設過的變數，
+        // 都列進「已設定的變數」方便插入
         val setVarNames = precedingActions.filterIsInstance<Action.SetVariable>().map { it.name.trim() }
         val calcVarNames = precedingActions.filterIsInstance<Action.Calculate>().map { it.name.trim() }
         val exprVarNames = precedingActions.filterIsInstance<Action.Expression>().mapNotNull { expr ->
@@ -1239,8 +1357,9 @@ fun availableTokens(
         val jsonVarNames = precedingActions.filterIsInstance<Action.JsonGet>().map { it.variableName.trim() }
         val textVarNames = precedingActions.filterIsInstance<Action.TextTransform>().map { it.variableName.trim() }
         val dateVarNames = precedingActions.filterIsInstance<Action.DateFormat>().map { it.variableName.trim() }
+        val locVarNames = precedingActions.filterIsInstance<Action.GetLocation>().map { it.variableName.trim() }
         val varNames = (setVarNames + calcVarNames + exprVarNames + askVarNames + menuVarNames +
-            listVarNames + forEachItemNames + jsonVarNames + textVarNames + dateVarNames)
+            listVarNames + forEachItemNames + jsonVarNames + textVarNames + dateVarNames + locVarNames)
             .filter { it.isNotBlank() }
             .distinct()
         if (varNames.isNotEmpty()) {
@@ -1562,6 +1681,37 @@ private fun CameraPermissionNotice() {
     }
 }
 
+/** 「修改系統設定」權限提示（螢幕亮度／自動旋轉／螢幕逾時共用） */
+@Composable
+private fun WriteSettingsNotice() {
+    SpecialAccessNotice(
+        granted = { RoutineExecutor.canWriteSettings(it) },
+        message = "尚未取得「修改系統設定」權限，這個動作會被記為失敗。",
+        onGrant = { it.openPermissionSettings(Settings.ACTION_MANAGE_WRITE_SETTINGS) }
+    )
+}
+
+/** 位置權限的就地 runtime 請求（取得目前位置） */
+@Composable
+private fun LocationPermissionNotice() {
+    val context = LocalContext.current
+    var granted by remember { mutableStateOf(GeofenceManager.hasForegroundLocation(context)) }
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted = it }
+
+    if (granted) return
+    Spacer(Modifier.height(12.dp))
+    Text(
+        "尚未取得「位置」權限，這個動作會被記為失敗。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error
+    )
+    TextButton(onClick = { launcher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }) {
+        Text("授權")
+    }
+}
+
 /** 麥克風權限的就地 runtime 請求（錄音） */
 @Composable
 private fun MicrophonePermissionNotice() {
@@ -1686,11 +1836,18 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.MediaVolume -> true
     is Action.RingerMode -> true
     is Action.Bluetooth -> true
+    is Action.WifiToggle -> true
     is Action.Flashlight -> true
     is Action.Speak -> action.text.isNotBlank()
     is Action.Vibrate -> true
     is Action.Dnd -> true
     is Action.Brightness -> true
+    is Action.AutoRotate -> true
+    is Action.ScreenTimeout -> true
+    // 撥號 / 傳簡訊至少要有號碼；取得目前位置一定要有存入的變數名稱
+    is Action.Dial -> action.number.isNotBlank()
+    is Action.SendSms -> action.number.isNotBlank()
+    is Action.GetLocation -> action.variableName.isNotBlank()
     is Action.Http -> action.url.isNotBlank()
     is Action.MediaKey -> true
     is Action.Wait -> true
