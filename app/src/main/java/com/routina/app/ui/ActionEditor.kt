@@ -666,6 +666,86 @@ fun ActionEditDialog(
                     )
                 }
 
+                is Action.AskInput -> Column {
+                    VariableTextField(
+                        value = current.prompt,
+                        onValueChange = { draft = current.copy(prompt = it) },
+                        label = "提示文字",
+                        tokenGroups = tokenGroups,
+                        placeholder = "例如：今天想去哪？",
+                        minLines = 1,
+                        maxLines = 3
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = current.variableName,
+                        onValueChange = { draft = current.copy(variableName = it) },
+                        label = { Text("存到變數") },
+                        placeholder = { Text("例如：目的地") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    VariableTextField(
+                        value = current.defaultValue,
+                        onValueChange = { draft = current.copy(defaultValue = it) },
+                        label = "預設值（選填）",
+                        tokenGroups = tokenGroups,
+                        placeholder = "預先填入輸入框的內容",
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "執行到這裡會暫停並跳出對話框請你輸入文字，輸入的內容存進變數，" +
+                            "之後用 {{var:名稱}} 引用。由背景觸發且無法直接跳出對話框時，" +
+                            "會改發一則通知，點擊後才跳出對話框；逾時未回應會記為失敗。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.ChooseMenu -> Column {
+                    VariableTextField(
+                        value = current.prompt,
+                        onValueChange = { draft = current.copy(prompt = it) },
+                        label = "提示文字",
+                        tokenGroups = tokenGroups,
+                        placeholder = "例如：選擇一個項目",
+                        minLines = 1,
+                        maxLines = 3
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = current.variableName,
+                        onValueChange = { draft = current.copy(variableName = it) },
+                        label = { Text("存到變數") },
+                        placeholder = { Text("例如：選擇") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    // 選項以「一行一個」編輯：換行切開；空行在執行與驗證時忽略
+                    VariableTextField(
+                        value = current.options.joinToString("\n"),
+                        onValueChange = { text ->
+                            draft = current.copy(options = text.split("\n"))
+                        },
+                        label = "選項（一行一個）",
+                        tokenGroups = tokenGroups,
+                        placeholder = "早餐\n午餐\n晚餐",
+                        minLines = 3,
+                        maxLines = 8
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "執行到這裡會暫停並列出選項讓你選一個，選中的文字存進變數，" +
+                            "之後用 {{var:名稱}} 引用。每個選項都可插入變數；由背景觸發且無法直接" +
+                            "跳出對話框時，會改發一則通知，點擊後才跳出對話框；逾時未回應會記為失敗。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 is Action.IfBegin -> ConditionEditor(
                     condition = current.condition,
                     tokenGroups = tokenGroups,
@@ -792,14 +872,16 @@ fun availableTokens(
             add(VarTokenGroup("觸發提供", it))
         }
         add(VarTokenGroup("上一個結果", listOf(VarToken("上一個動作的輸出", "{{result}}"))))
-        // 前面用「設定變數 / 計算 / 運算式」設過的變數，都列進「已設定的變數」方便插入
+        // 前面用「設定變數 / 計算 / 運算式 / 詢問輸入 / 選單選擇」設過的變數，都列進「已設定的變數」方便插入
         val setVarNames = precedingActions.filterIsInstance<Action.SetVariable>().map { it.name.trim() }
         val calcVarNames = precedingActions.filterIsInstance<Action.Calculate>().map { it.name.trim() }
         val exprVarNames = precedingActions.filterIsInstance<Action.Expression>().mapNotNull { expr ->
             val eq = expr.text.indexOf('=')
             if (eq > 0) expr.text.substring(0, eq).trim() else null
         }
-        val varNames = (setVarNames + calcVarNames + exprVarNames)
+        val askVarNames = precedingActions.filterIsInstance<Action.AskInput>().map { it.variableName.trim() }
+        val menuVarNames = precedingActions.filterIsInstance<Action.ChooseMenu>().map { it.variableName.trim() }
+        val varNames = (setVarNames + calcVarNames + exprVarNames + askVarNames + menuVarNames)
             .filter { it.isNotBlank() }
             .distinct()
         if (varNames.isNotEmpty()) {
@@ -1267,6 +1349,9 @@ private fun isActionValid(action: Action): Boolean = when (action) {
         val eq = action.text.indexOf('=')
         eq > 0 && action.text.substring(0, eq).isNotBlank()
     }
+    // 互動動作：一定要有存入的變數名稱；選單另需至少一個非空選項
+    is Action.AskInput -> action.variableName.isNotBlank()
+    is Action.ChooseMenu -> action.variableName.isNotBlank() && action.options.any { it.isNotBlank() }
     // 流程控制標記沒有必填欄位（條件空＝恆成立）
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,

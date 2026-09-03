@@ -129,7 +129,13 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
     // 舊型別仍可反序列化與執行，只是不再從調色盤新增。
     PaletteGroup(
         "變數",
-        listOf(Action.Expression(), Action.Text(), Action.SetGlobalVariable())
+        listOf(
+            Action.Expression(),
+            Action.Text(),
+            Action.SetGlobalVariable(),
+            Action.AskInput(),
+            Action.ChooseMenu()
+        )
     ),
     PaletteGroup(
         "流程控制",

@@ -581,6 +581,32 @@ sealed class Action {
     @SerialName("expression")
     data class Expression(val text: String = "") : Action()
 
+    /**
+     * 詢問輸入：執行到這裡時暫停，跳出對話框請使用者輸入一段文字，
+     * 把答案存進具名變數 [variableName]（後續以 `{{var:名稱}}` 引用）。
+     * [prompt] 可含變數 token；[defaultValue] 預先填入輸入框（也可含 token）。
+     */
+    @Serializable
+    @SerialName("ask_input")
+    data class AskInput(
+        val prompt: String = "",
+        val variableName: String = "",
+        val defaultValue: String = ""
+    ) : Action()
+
+    /**
+     * 選單選擇：執行到這裡時暫停，跳出對話框列出 [options] 讓使用者點選一個，
+     * 把選中的文字存進具名變數 [variableName]（後續以 `{{var:名稱}}` 引用）。
+     * [prompt] 與每個選項都可含變數 token。
+     */
+    @Serializable
+    @SerialName("choose_menu")
+    data class ChooseMenu(
+        val prompt: String = "",
+        val options: List<String> = emptyList(),
+        val variableName: String = ""
+    ) : Action()
+
     // ---- 流程控制（配對標記）----
     // 扁平清單用配對的 begin/end 標記表達層級，由 RoutineExecutor 的直譯器解讀；
     // dispatch 時皆為 no-op（流程由直譯器處理）。對不成對的標記直譯器保持穩健、不崩潰。

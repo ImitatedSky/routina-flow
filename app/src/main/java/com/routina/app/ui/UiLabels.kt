@@ -138,6 +138,8 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.SetGlobalVariable -> "設定全域變數"
     is Action.Calculate -> "計算"
     is Action.Expression -> "運算式"
+    is Action.AskInput -> "詢問輸入"
+    is Action.ChooseMenu -> "選單選擇"
     is Action.IfBegin -> "如果"
     is Action.ElseIf -> "否則如果"
     is Action.Else -> "否則"
@@ -177,6 +179,8 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.SetGlobalVariable -> "設定全域變數"
     is Action.Calculate -> "計算"
     is Action.Expression -> "運算式"
+    is Action.AskInput -> "詢問輸入"
+    is Action.ChooseMenu -> "選單選擇"
     is Action.IfBegin -> "如果"
     is Action.ElseIf -> "否則如果"
     is Action.Else -> "否則"
@@ -233,6 +237,13 @@ fun actionParamText(action: Action): String = when (action) {
     )
 
     is Action.Expression -> truncate(action.text.flattenLines().ifBlank { "未設定" }, 24)
+
+    // 積木參數欄顯示提示文字（截斷）；未填提示時退回顯示變數名稱
+    is Action.AskInput ->
+        truncate(action.prompt.flattenLines().ifBlank { action.variableName.ifBlank { "未設定" } }, 20)
+
+    is Action.ChooseMenu ->
+        truncate(action.prompt.flattenLines().ifBlank { action.variableName.ifBlank { "未設定" } }, 20)
 
     is Action.IfBegin -> conditionSummary(action.condition)
     is Action.ElseIf -> conditionSummary(action.condition)
