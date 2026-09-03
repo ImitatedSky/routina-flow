@@ -48,7 +48,7 @@ private data class PaletteGroup<T>(val title: String, val items: List<T>)
 
 /**
  * 觸發類型選項（以預設值建立），依主題分組。
- * 型別數量已達 17 種，分組小標是讓使用者仍能一眼掃到目標的關鍵；
+ * 型別數量已達 25 種，分組小標是讓使用者仍能一眼掃到目標的關鍵；
  * 每一組的積木色也同色相（色表見 RoutinaColors），組名與顏色互相印證。
  */
 private val TRIGGER_GROUPS: List<PaletteGroup<Trigger>> = listOf(
@@ -62,6 +62,7 @@ private val TRIGGER_GROUPS: List<PaletteGroup<Trigger>> = listOf(
             Trigger.PowerDisconnected,
             Trigger.BatteryBelow(),
             Trigger.BatteryAbove(),
+            Trigger.BatteryFull,
             Trigger.PowerSave()
         )
     ),
@@ -72,6 +73,8 @@ private val TRIGGER_GROUPS: List<PaletteGroup<Trigger>> = listOf(
             Trigger.WifiDisconnected,
             Trigger.BtConnected(),
             Trigger.BtDisconnected(),
+            Trigger.HeadsetPlugged,
+            Trigger.HeadsetUnplugged,
             Trigger.AirplaneMode(),
             Trigger.NfcTag()
         )
@@ -79,6 +82,10 @@ private val TRIGGER_GROUPS: List<PaletteGroup<Trigger>> = listOf(
     PaletteGroup(
         "系統與應用",
         listOf(
+            Trigger.ScreenUnlocked,
+            Trigger.ScreenOn,
+            Trigger.ScreenOff,
+            Trigger.DeviceBoot,
             Trigger.DndChanged(),
             Trigger.NotificationPosted(),
             Trigger.AppState()
@@ -314,7 +321,7 @@ private fun PaletteSheet(
     // 內容不長時 Expanded 仍只有內容的高度，短清單不會變成滿版。
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        // 15 種動作 / 17 種觸發加上分組小標已遠超一個 sheet 的高度，內容必須可捲動，
+        // 15 種動作 / 25 種觸發加上分組小標已遠超一個 sheet 的高度，內容必須可捲動，
         // 否則展開到全高後底部的積木完全搆不到。
         //
         // 用 verticalScroll 的 Column 而非 LazyColumn：ModalBottomSheet 已經為

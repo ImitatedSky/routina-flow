@@ -103,6 +103,11 @@ sealed class Trigger {
     @SerialName("battery_above")
     data class BatteryAbove(val threshold: Int = 80) : Trigger()
 
+    /** 充電完成：電量達 100% / 狀態為 FULL（每次充電只觸發一次） */
+    @Serializable
+    @SerialName("battery_full")
+    data object BatteryFull : Trigger()
+
     /** 飛航模式切換 */
     @Serializable
     @SerialName("airplane_mode")
@@ -154,6 +159,36 @@ sealed class Trigger {
         val onOpen: Boolean = true
     ) : Trigger()
 
+    /** 解鎖螢幕（ACTION_USER_PRESENT） */
+    @Serializable
+    @SerialName("screen_unlocked")
+    data object ScreenUnlocked : Trigger()
+
+    /** 螢幕開啟（ACTION_SCREEN_ON） */
+    @Serializable
+    @SerialName("screen_on")
+    data object ScreenOn : Trigger()
+
+    /** 螢幕關閉（ACTION_SCREEN_OFF） */
+    @Serializable
+    @SerialName("screen_off")
+    data object ScreenOff : Trigger()
+
+    /** 插入耳機（ACTION_HEADSET_PLUG，state=1） */
+    @Serializable
+    @SerialName("headset_plugged")
+    data object HeadsetPlugged : Trigger()
+
+    /** 拔除耳機（ACTION_HEADSET_PLUG，state=0） */
+    @Serializable
+    @SerialName("headset_unplugged")
+    data object HeadsetUnplugged : Trigger()
+
+    /** 開機完成（ACTION_BOOT_COMPLETED，由 manifest 的 BootReceiver 分派，不需常駐服務） */
+    @Serializable
+    @SerialName("device_boot")
+    data object DeviceBoot : Trigger()
+
     companion object {
         val ALL_DAYS: Set<Int> = setOf(1, 2, 3, 4, 5, 6, 7)
 
@@ -184,22 +219,30 @@ enum class TimeMode {
 /**
  * 觸發條件是否需要 MonitorService 常駐監測。
  *
- * 不在此列的三種背景觸發各有更省的路徑：藍牙 ACL 廣播屬於隱式廣播豁免清單，
+ * 不在此列的背景觸發各有更省的路徑：藍牙 ACL 廣播屬於隱式廣播豁免清單，
  * 由 manifest 靜態 receiver 接收；NFC 標籤由系統 dispatch 到 NfcDispatchActivity；
- * 通知則由系統綁定的 NotificationListenerService 送達——都不需要常駐服務。
+ * 通知則由系統綁定的 NotificationListenerService 送達；開機完成由 manifest 的
+ * BootReceiver 在開機當下分派——都不需要常駐服務。
  * App 開啟／關閉沒有對應的系統廣播，只能自行輪詢使用情況，因此必須有服務承載。
+ * 螢幕開關 / 解鎖、插拔耳機、充電完成則靠服務動態註冊的廣播接收，同樣需要常駐服務。
  */
 val Trigger.needsMonitor: Boolean
     get() = this is Trigger.PowerConnected ||
         this is Trigger.PowerDisconnected ||
         this is Trigger.BatteryBelow ||
         this is Trigger.BatteryAbove ||
+        this is Trigger.BatteryFull ||
         this is Trigger.WifiConnected ||
         this is Trigger.WifiDisconnected ||
         this is Trigger.AirplaneMode ||
         this is Trigger.DndChanged ||
         this is Trigger.PowerSave ||
-        this is Trigger.AppState
+        this is Trigger.AppState ||
+        this is Trigger.ScreenUnlocked ||
+        this is Trigger.ScreenOn ||
+        this is Trigger.ScreenOff ||
+        this is Trigger.HeadsetPlugged ||
+        this is Trigger.HeadsetUnplugged
 
 /** 是否為藍牙裝置觸發（由靜態 ACL receiver 接收） */
 val Trigger.isBluetooth: Boolean

@@ -138,6 +138,7 @@ fun triggerSummary(trigger: Trigger): String = when (trigger) {
     is Trigger.PowerDisconnected -> "拔除電源時"
     is Trigger.BatteryBelow -> "電量低於 ${trigger.threshold}%"
     is Trigger.BatteryAbove -> "電量高於 ${trigger.threshold}%"
+    is Trigger.BatteryFull -> "充電完成時"
     is Trigger.LocationEnter -> "進入區域時"
     is Trigger.LocationExit -> "離開區域時"
     is Trigger.BtConnected -> "藍牙連接時"
@@ -150,6 +151,12 @@ fun triggerSummary(trigger: Trigger): String = when (trigger) {
     is Trigger.NfcTag -> "掃到標籤時"
     is Trigger.NotificationPosted -> "收到通知時"
     is Trigger.AppState -> "App ${if (trigger.onOpen) "開啟" else "關閉"}時"
+    is Trigger.HeadsetPlugged -> "插入耳機時"
+    is Trigger.HeadsetUnplugged -> "拔除耳機時"
+    is Trigger.ScreenUnlocked -> "解鎖螢幕時"
+    is Trigger.ScreenOn -> "螢幕開啟時"
+    is Trigger.ScreenOff -> "螢幕關閉時"
+    is Trigger.DeviceBoot -> "開機完成時"
 }
 
 private fun onOffWhen(on: Boolean): String = if (on) "開啟時" else "關閉時"

@@ -12,6 +12,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.media.AudioManager
 import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
@@ -48,6 +49,7 @@ class MonitorService : Service() {
     private var systemStateReceiver: SystemStateReceiver? = null
     private var wifiCallback: WifiCallback? = null
     private var screenReceiver: ScreenReceiver? = null
+    private var headsetReceiver: HeadsetReceiver? = null
 
     /**
      * App 開啟／關閉的偵測器。只有螢幕亮著時才輪詢，因此需要一個螢幕開關的
@@ -58,6 +60,19 @@ class MonitorService : Service() {
     /** 電量門檻去重：已觸發過的 routine id（電量回到門檻另一側後移除） */
     private val firedBatteryBelow = mutableSetOf<String>()
     private val firedBatteryAbove = mutableSetOf<String>()
+
+    /**
+     * 充電完成是否已觸發過。追蹤電量「滿」的邊緣狀態而非個別 routine：
+     * 達 100% / 狀態 FULL 時觸發一次並記為已觸發，拔除電源後重置，避免每筆 BATTERY_CHANGED 重觸。
+     */
+    private var batteryFullFired = false
+
+    /**
+     * 耳機最後已知的插拔狀態（null＝尚未收到第一筆）。
+     * ACTION_HEADSET_PLUG 是 sticky 廣播，註冊時系統會立刻補送最後一次狀態，
+     * 第一筆只記狀態、不視為插拔，避免啟動即誤觸發。
+     */
+    private var headsetPlugged: Boolean? = null
 
     /**
      * 是否已收到第一筆電量讀數。
@@ -86,6 +101,7 @@ class MonitorService : Service() {
         registerPowerReceiver()
         registerSystemStateReceiver()
         registerWifiCallback()
+        registerHeadsetReceiver()
         startAppUsageWatcher()
     }
 
@@ -111,6 +127,8 @@ class MonitorService : Service() {
         systemStateReceiver = null
         screenReceiver?.let { runCatching { unregisterReceiver(it) } }
         screenReceiver = null
+        headsetReceiver?.let { runCatching { unregisterReceiver(it) } }
+        headsetReceiver = null
         wifiCallback?.let { callback ->
             runCatching {
                 getSystemService(ConnectivityManager::class.java)
@@ -149,7 +167,9 @@ class MonitorService : Service() {
     }
 
     /**
-     * 建立 App 開啟／關閉的偵測器，並註冊螢幕開關 receiver 控制它的啟停。
+     * 建立 App 開啟／關閉的偵測器，並註冊螢幕開關 / 解鎖 receiver。
+     * 這個 receiver 同時承擔兩件事：控制使用情況輪詢的啟停（只有螢幕亮著才輪詢），
+     * 以及分派螢幕開啟 / 關閉 / 解鎖三種觸發。
      * 目前的螢幕狀態要先讀進來當初始值（服務也可能在螢幕熄滅時才啟動）。
      */
     private fun startAppUsageWatcher() {
@@ -160,11 +180,22 @@ class MonitorService : Service() {
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_USER_PRESENT)
         }
         screenReceiver = ScreenReceiver().also { registerNotExported(it, filter) }
 
         watcher.setScreenOn(readScreenOn())
         watcher.sync()
+    }
+
+    /**
+     * 插拔耳機：ACTION_HEADSET_PLUG。這是 sticky 廣播，註冊時系統會立刻補送最後一次狀態，
+     * 第一筆由 [HeadsetReceiver] 只記狀態、不視為插拔（見 headsetPlugged），避免啟動即誤觸發。
+     */
+    private fun registerHeadsetReceiver() {
+        if (headsetReceiver != null) return
+        val filter = IntentFilter(AudioManager.ACTION_HEADSET_PLUG)
+        headsetReceiver = HeadsetReceiver().also { registerNotExported(it, filter) }
     }
 
     private fun registerNotExported(receiver: BroadcastReceiver, filter: IntentFilter) {
@@ -287,12 +318,46 @@ class MonitorService : Service() {
         }
     }
 
-    /** 螢幕亮 / 暗：只有亮著時才輪詢使用情況（App 觸發的耗電控制） */
+    /**
+     * 螢幕亮 / 暗 / 解鎖。
+     * 亮 / 暗除了分派對應觸發，也控制使用情況輪詢的啟停（App 觸發的耗電控制）。
+     * 這三個廣播都不是 sticky，註冊後不會被系統補送舊值，因此不需要吞初值。
+     */
     private inner class ScreenReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
-                Intent.ACTION_SCREEN_ON -> appUsageWatcher?.setScreenOn(true)
-                Intent.ACTION_SCREEN_OFF -> appUsageWatcher?.setScreenOn(false)
+                Intent.ACTION_SCREEN_ON -> {
+                    appUsageWatcher?.setScreenOn(true)
+                    runMatching(TriggerSource.SYSTEM) { it is Trigger.ScreenOn }
+                }
+
+                Intent.ACTION_SCREEN_OFF -> {
+                    appUsageWatcher?.setScreenOn(false)
+                    runMatching(TriggerSource.SYSTEM) { it is Trigger.ScreenOff }
+                }
+
+                Intent.ACTION_USER_PRESENT ->
+                    runMatching(TriggerSource.SYSTEM) { it is Trigger.ScreenUnlocked }
+            }
+        }
+    }
+
+    /** 插拔耳機：state=1 插入、state=0 拔除。第一筆 sticky 初值只記狀態、不觸發 */
+    private inner class HeadsetReceiver : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != AudioManager.ACTION_HEADSET_PLUG) return
+            val plugged = intent.getIntExtra("state", 0) == 1
+            // 註冊時補送的 sticky 初值：只記基準狀態，不視為一次插拔
+            if (headsetPlugged == null) {
+                headsetPlugged = plugged
+                return
+            }
+            if (plugged == headsetPlugged) return
+            headsetPlugged = plugged
+            if (plugged) {
+                runMatching(TriggerSource.SYSTEM) { it is Trigger.HeadsetPlugged }
+            } else {
+                runMatching(TriggerSource.SYSTEM) { it is Trigger.HeadsetUnplugged }
             }
         }
     }
@@ -336,12 +401,13 @@ class MonitorService : Service() {
     }
 
     /**
-     * 電量門檻。
+     * 電量門檻與充電完成。
      *
      * - 低於：電量降至門檻（含）以下時觸發一次，回升至門檻以上後重置
      * - 高於：電量升至門檻（含）以上時觸發一次，回落至門檻以下後重置
+     * - 充電完成：達 100% / 狀態為 FULL 時觸發一次，拔除電源後重置（每次充電只觸發一次）
      *
-     * 兩者的已觸發狀態各自獨立。
+     * 三者的已觸發狀態各自獨立。
      */
     private fun handleBatteryChanged(intent: Intent) {
         val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
@@ -352,8 +418,9 @@ class MonitorService : Service() {
         val seeding = !batteryStateInitialized
         batteryStateInitialized = true
 
+        val routines = RoutineRepository.get(this).routines.value
         val triggered = mutableListOf<Routine>()
-        RoutineRepository.get(this).routines.value.forEach { routine ->
+        routines.forEach { routine ->
             when (val trigger = routine.trigger) {
                 is Trigger.BatteryBelow -> evaluateThreshold(
                     routine = routine,
@@ -374,8 +441,42 @@ class MonitorService : Service() {
                 else -> Unit
             }
         }
+        evaluateBatteryFull(intent, percent, seeding, routines, triggered)
+
         if (triggered.isNotEmpty()) {
             TriggerDispatch.run(this, triggered, TriggerSource.BATTERY)
+        }
+    }
+
+    /**
+     * 充電完成的邊緣判定：達 100% 或狀態為 FULL（且在充電中）時，在上升邊緣觸發一次。
+     * batteryFullFired 追蹤電量「滿」的狀態而非個別 routine，拔除電源後重置，
+     * 因此同一次充電只觸發一次、不會每筆 BATTERY_CHANGED 重觸。
+     */
+    private fun evaluateBatteryFull(
+        intent: Intent,
+        percent: Int,
+        seeding: Boolean,
+        routines: List<Routine>,
+        triggered: MutableList<Routine>
+    ) {
+        val status = intent.getIntExtra(
+            BatteryManager.EXTRA_STATUS,
+            BatteryManager.BATTERY_STATUS_UNKNOWN
+        )
+        val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
+        val full = status == BatteryManager.BATTERY_STATUS_FULL || (plugged && percent >= 100)
+
+        if (full) {
+            if (batteryFullFired) return
+            batteryFullFired = true
+            // 服務啟動時電量已滿只建立基準、不算「剛充滿」
+            if (seeding) return
+            routines.filter { it.enabled && it.trigger is Trigger.BatteryFull }
+                .forEach { triggered += it }
+        } else if (!plugged) {
+            // 拔除電源＝這次充電結束 → 重置，下次充滿可再觸發
+            batteryFullFired = false
         }
     }
 

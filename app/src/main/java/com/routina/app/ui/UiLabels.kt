@@ -57,6 +57,7 @@ fun triggerTypeName(trigger: Trigger): String = when (trigger) {
     is Trigger.PowerDisconnected -> "停止充電"
     is Trigger.BatteryBelow -> "電量低於"
     is Trigger.BatteryAbove -> "電量高於"
+    is Trigger.BatteryFull -> "充電完成"
     is Trigger.LocationEnter -> "進入區域"
     is Trigger.LocationExit -> "離開區域"
     is Trigger.BtConnected -> "藍牙連接"
@@ -69,6 +70,12 @@ fun triggerTypeName(trigger: Trigger): String = when (trigger) {
     is Trigger.NfcTag -> "NFC 標籤"
     is Trigger.NotificationPosted -> "收到通知"
     is Trigger.AppState -> "App 開啟／關閉"
+    is Trigger.HeadsetPlugged -> "插入耳機"
+    is Trigger.HeadsetUnplugged -> "拔除耳機"
+    is Trigger.ScreenUnlocked -> "解鎖螢幕"
+    is Trigger.ScreenOn -> "螢幕開啟"
+    is Trigger.ScreenOff -> "螢幕關閉"
+    is Trigger.DeviceBoot -> "開機完成"
 }
 
 /** 區域參數欄的內容：有取名字就顯示名字，否則顯示「經度, 緯度 ±半徑m」 */
