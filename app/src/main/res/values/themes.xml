@@ -13,4 +13,16 @@
         <item name="android:backgroundDimEnabled">false</item>
         <item name="android:windowAnimationStyle">@null</item>
     </style>
+
+    <!--
+      互動動作（詢問輸入 / 選單選擇）用的對話框主題：Activity 視窗本身全透明、無標題，
+      實際的遮罩與對話框由 Compose 的 AlertDialog 自帶（backgroundDimEnabled 關閉避免重複變暗），
+      看起來就是浮在原畫面之上的對話框。
+    -->
+    <style name="Theme.Routina.Dialog" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

@@ -172,6 +172,21 @@
             android:theme="@style/Theme.Routina.Invisible" />
 
         <!--
+          互動動作（詢問輸入 / 選單選擇）的對話框入口：透明、對話框樣式的 Activity。
+          動作可能在背景服務裡執行，而只有 Activity 能呈現 UI，所以由執行器透過
+          InputBridge 登記請求後啟動這個 Activity 當收件人；使用者回應後把結果交回執行器。
+          exported=false（只由本 App 內部啟動）；noHistory + excludeFromRecents 讓它不留在
+          返回堆疊與最近使用；configChanges 讓旋轉／開鍵盤不重建（避免被誤判為取消）。
+        -->
+        <activity
+            android:name=".engine.InputPromptActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|density|uiMode"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@style/Theme.Routina.Dialog" />
+
+        <!--
           通知觸發：由系統綁定的通知監聽服務，需要使用者在「通知存取權」中開啟。
           系統負責啟停 → 通知觸發不需要任何常駐服務。
         -->

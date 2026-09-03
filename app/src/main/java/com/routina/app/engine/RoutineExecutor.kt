@@ -45,6 +45,7 @@ import com.routina.app.model.usesRightOperand
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
@@ -452,6 +453,11 @@ object RoutineExecutor {
                 is Action.SetGlobalVariable -> doSetGlobalVariable(resolved, ctx)
                 is Action.Calculate -> doCalculate(resolved, ctx)
                 is Action.Expression -> doExpression(resolved, ctx)
+                is Action.AskInput ->
+                    doAskInput(context, routine, index, resolved, canLaunchActivity, ctx)
+
+                is Action.ChooseMenu ->
+                    doChooseMenu(context, routine, index, resolved, canLaunchActivity, ctx)
                 // 流程控制標記與「執行程序」由直譯器 runProgram 處理；走到這裡不做事
                 is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
                 is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
@@ -494,6 +500,17 @@ object RoutineExecutor {
         is Action.Calculate -> action.copy(
             left = VariableResolver.resolve(action.left, ctx),
             right = VariableResolver.resolve(action.right, ctx)
+        )
+
+        // 互動動作：解析提示 / 選項 / 預設值；變數名稱是識別碼、不解析（同 SetVariable.name）
+        is Action.AskInput -> action.copy(
+            prompt = VariableResolver.resolve(action.prompt, ctx),
+            defaultValue = VariableResolver.resolve(action.defaultValue, ctx)
+        )
+
+        is Action.ChooseMenu -> action.copy(
+            prompt = VariableResolver.resolve(action.prompt, ctx),
+            options = action.options.map { VariableResolver.resolve(it, ctx) }
         )
 
         else -> action
@@ -1061,6 +1078,99 @@ object RoutineExecutor {
         return "$name = $value"
     }
 
+    /**
+     * 詢問輸入：暫停並跳出對話框請使用者輸入文字，答案存進具名變數。
+     * 使用者取消 / 逾時未回應時記為失敗（不影響其餘動作）。
+     */
+    private suspend fun doAskInput(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.AskInput,
+        canLaunchActivity: Boolean,
+        ctx: RunContext
+    ): String {
+        val name = action.variableName.trim()
+        if (name.isBlank()) error("未設定要存入的變數名稱")
+        val answer = awaitUserInput(
+            context, routine, index,
+            kind = InputPromptActivity.KIND_INPUT,
+            prompt = action.prompt,
+            default = action.defaultValue,
+            options = emptyList(),
+            variableName = name,
+            canLaunchActivity = canLaunchActivity
+        ) ?: error("使用者未回應／已取消")
+        ctx.vars[name] = answer
+        return "$name = $answer"
+    }
+
+    /**
+     * 選單選擇：暫停並跳出對話框列出選項讓使用者選一個，選中的文字存進具名變數。
+     * 沒有可選選項時記為失敗；使用者取消 / 逾時未回應時記為失敗。
+     */
+    private suspend fun doChooseMenu(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.ChooseMenu,
+        canLaunchActivity: Boolean,
+        ctx: RunContext
+    ): String {
+        val name = action.variableName.trim()
+        if (name.isBlank()) error("未設定要存入的變數名稱")
+        val options = action.options.filter { it.isNotBlank() }
+        if (options.isEmpty()) error("選單沒有任何選項")
+        val chosen = awaitUserInput(
+            context, routine, index,
+            kind = InputPromptActivity.KIND_MENU,
+            prompt = action.prompt,
+            default = "",
+            options = options,
+            variableName = name,
+            canLaunchActivity = canLaunchActivity
+        ) ?: error("使用者未回應／已取消")
+        ctx.vars[name] = chosen
+        return "$name = $chosen"
+    }
+
+    /**
+     * 互動動作共用的等待流程：登記一筆請求 → 啟動（或背景以通知帶出）[InputPromptActivity]
+     * → 在 deferred 上掛起等待使用者回應。前景（手動 / 有覆蓋權限）直接跳對話框；背景改發
+     * 可點擊通知，點了才開對話框——沿用「開啟 App／網址」的 [launchOrNotify] 降級精神。
+     *
+     * 一律帶等待上限（[INPUT_TIMEOUT_MS]），使用者一直不回應時整條例行程序不會永遠卡住。
+     * 回傳答案字串；取消 / 逾時回傳 null，由呼叫端記為失敗。
+     */
+    private suspend fun awaitUserInput(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        kind: String,
+        prompt: String,
+        default: String,
+        options: List<String>,
+        variableName: String,
+        canLaunchActivity: Boolean
+    ): String? {
+        val requestId = InputBridge.nextRequestId()
+        val deferred = InputBridge.open(requestId)
+        val intent = InputPromptActivity.intent(
+            context, requestId, kind, prompt, default, options, variableName
+        )
+        return try {
+            // 前景直接 startActivity；背景無法直接啟動時改發通知（點擊才開對話框），仍在此等待
+            launchOrNotify(context, routine, index, intent, promptTitle(kind), canLaunchActivity, verb = "回答")
+            withTimeoutOrNull(INPUT_TIMEOUT_MS) { deferred.await() }
+        } finally {
+            // 逾時或啟動失敗時清掉登記，避免 pending 洩漏
+            InputBridge.cancel(requestId)
+        }
+    }
+
+    private fun promptTitle(kind: String): String =
+        if (kind == InputPromptActivity.KIND_MENU) "選單選擇" else "詢問輸入"
+
     /** 整數結果去掉小數點；非整數保留（去尾零），四捨五入到 6 位避免浮點雜訊 */
     private fun formatNumber(d: Double): String = when {
         d.isNaN() || d.isInfinite() -> "0"
@@ -1516,6 +1626,9 @@ object RoutineExecutor {
 
         is Action.Expression -> "運算式：${redactText(action.text, 40)}"
 
+        is Action.AskInput -> "詢問輸入：${redactText(action.prompt)}"
+        is Action.ChooseMenu -> "選單選擇：${redactText(action.prompt)}"
+
         is Action.IfBegin -> "如果 ${describeCondition(action.condition)}"
         is Action.ElseIf -> "否則如果 ${describeCondition(action.condition)}"
         is Action.Else -> "否則"
@@ -1627,6 +1740,9 @@ object RoutineExecutor {
     private const val MAX_BRIGHTNESS = 255
 
     private const val HTTP_TIMEOUT_MS = 10_000
+
+    /** 互動動作（詢問輸入 / 選單選擇）等待使用者回應的上限，逾時記為失敗，不讓流程永遠卡住 */
+    private const val INPUT_TIMEOUT_MS = 120_000L
 
     /** HTTP 回應保留為輸出時的長度上限，避免執行情境無限膨脹 */
     private const val MAX_HTTP_OUTPUT_CHARS = 10_000

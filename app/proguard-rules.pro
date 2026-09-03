@@ -43,4 +43,5 @@
 -keep class com.routina.app.engine.MonitorService
 -keep class com.routina.app.engine.ExecutionService
 -keep class com.routina.app.engine.NfcDispatchActivity
+-keep class com.routina.app.engine.InputPromptActivity
 -keep class com.routina.app.engine.RoutinaNotificationListener
