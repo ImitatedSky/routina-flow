@@ -624,6 +624,55 @@ sealed class Action {
     @SerialName("expression")
     data class Expression(val text: String = "") : Action()
 
+    // ---- 清單 ----
+    // 清單就是一段「一行一個項目」的純文字，存在一般變數裡（`{{var:名稱}}` 照常引用）。
+    // 讀取時去掉每行前後空白、略過空行；寫入時以換行接起來。
+
+    /** 建立清單：把多行文字（一行一個項目，可含 token）正規化後存成清單變數 [variableName] */
+    @Serializable
+    @SerialName("list_create")
+    data class ListCreate(
+        val items: String = "",
+        val variableName: String = ""
+    ) : Action()
+
+    /** 切割成清單：把 [input] 依 [delimiter] 切開，存成清單變數 [variableName] */
+    @Serializable
+    @SerialName("list_split")
+    data class ListSplit(
+        val input: String = "",
+        val delimiter: String = ",",
+        val variableName: String = ""
+    ) : Action()
+
+    /** 加入清單項目：把 [item] 接到清單變數 [variableName] 的最後（變數沒設過視為空清單） */
+    @Serializable
+    @SerialName("list_append")
+    data class ListAppend(
+        val variableName: String = "",
+        val item: String = ""
+    ) : Action()
+
+    /**
+     * 取清單項目：取清單變數 [listVariable] 的第 [index] 項（1 起算，可含 token
+     * 例如 `{{迴圈:次數}}`）存進 [variableName]；不是數字或超出範圍記為失敗。
+     */
+    @Serializable
+    @SerialName("list_get")
+    data class ListGet(
+        val listVariable: String = "",
+        val index: String = "1",
+        val variableName: String = ""
+    ) : Action()
+
+    /** 清單長度：把清單變數 [listVariable] 的項目數存進 [variableName] */
+    @Serializable
+    @SerialName("list_count")
+    data class ListCount(
+        val listVariable: String = "",
+        val variableName: String = ""
+    ) : Action()
+
     /**
      * 詢問輸入：執行到這裡時暫停，跳出對話框請使用者輸入一段文字，
      * 把答案存進具名變數 [variableName]（後續以 `{{var:名稱}}` 引用）。
@@ -693,6 +742,19 @@ sealed class Action {
     @Serializable
     @SerialName("end_repeat")
     data object EndRepeat : Action()
+
+    /**
+     * 逐項重複：把清單變數 [listVariable] 的每個項目各跑一遍 結束逐項 之間的動作。
+     * 迴圈內以 `{{迴圈:項目}}` 取得目前項目、`{{迴圈:次數}}` 取得目前是第幾項。
+     */
+    @Serializable
+    @SerialName("for_each_begin")
+    data class ForEachBegin(val listVariable: String = "") : Action()
+
+    /** 結束逐項 */
+    @Serializable
+    @SerialName("end_for_each")
+    data object EndForEach : Action()
 
     /**
      * 執行另一個程序：跑到這塊時，把 [routineId] 指向的程序的動作**當場跑一遍**

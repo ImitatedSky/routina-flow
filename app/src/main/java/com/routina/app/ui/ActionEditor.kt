@@ -666,6 +666,159 @@ fun ActionEditDialog(
                     )
                 }
 
+                is Action.ListCreate -> Column {
+                    OutlinedTextField(
+                        value = current.variableName,
+                        onValueChange = { draft = current.copy(variableName = it) },
+                        label = { Text("清單變數名稱") },
+                        placeholder = { Text("例如：待辦") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    VariableTextField(
+                        value = current.items,
+                        onValueChange = { draft = current.copy(items = it) },
+                        label = "項目（一行一個）",
+                        tokenGroups = tokenGroups,
+                        placeholder = "蘋果\n香蕉\n橘子",
+                        minLines = 3,
+                        maxLines = 8
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "清單就是「一行一個項目」的文字，空行會被略過。" +
+                            "之後用 {{var:名稱}} 引用，或用「逐項重複」把每個項目跑一遍。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.ListSplit -> Column {
+                    VariableTextField(
+                        value = current.input,
+                        onValueChange = { draft = current.copy(input = it) },
+                        label = "要切割的文字",
+                        tokenGroups = tokenGroups,
+                        placeholder = "例如：蘋果,香蕉,橘子",
+                        minLines = 1,
+                        maxLines = 4
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = current.delimiter,
+                        onValueChange = { draft = current.copy(delimiter = it) },
+                        label = { Text("分隔符號") },
+                        placeholder = { Text("例如：,") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = current.variableName,
+                        onValueChange = { draft = current.copy(variableName = it) },
+                        label = { Text("存到清單變數") },
+                        placeholder = { Text("例如：水果") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "依分隔符號把文字切成清單（前後空白會去掉，空項目略過）。分隔符號留空時用逗號。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.ListAppend -> Column {
+                    OutlinedTextField(
+                        value = current.variableName,
+                        onValueChange = { draft = current.copy(variableName = it) },
+                        label = { Text("清單變數名稱") },
+                        placeholder = { Text("例如：待辦") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    VariableTextField(
+                        value = current.item,
+                        onValueChange = { draft = current.copy(item = it) },
+                        label = "要加入的項目",
+                        tokenGroups = tokenGroups,
+                        placeholder = "可插入變數，例如 {{result}}",
+                        minLines = 1,
+                        maxLines = 4
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "把項目接到清單最後。清單變數還沒設過時，等於從空清單開始建立。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.ListGet -> Column {
+                    OutlinedTextField(
+                        value = current.listVariable,
+                        onValueChange = { draft = current.copy(listVariable = it) },
+                        label = { Text("清單變數名稱") },
+                        placeholder = { Text("例如：待辦") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    VariableTextField(
+                        value = current.index,
+                        onValueChange = { draft = current.copy(index = it) },
+                        label = "第幾項（1 起算）",
+                        tokenGroups = tokenGroups,
+                        placeholder = "例如：1，或插入 {{迴圈:次數}}",
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = current.variableName,
+                        onValueChange = { draft = current.copy(variableName = it) },
+                        label = { Text("存到變數") },
+                        placeholder = { Text("例如：目前項目") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "取出清單的第 N 項存進變數，之後用 {{var:名稱}} 引用。" +
+                            "編號不是數字或超出範圍時，這個動作會被記為失敗。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                is Action.ListCount -> Column {
+                    OutlinedTextField(
+                        value = current.listVariable,
+                        onValueChange = { draft = current.copy(listVariable = it) },
+                        label = { Text("清單變數名稱") },
+                        placeholder = { Text("例如：待辦") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = current.variableName,
+                        onValueChange = { draft = current.copy(variableName = it) },
+                        label = { Text("存到變數") },
+                        placeholder = { Text("例如：項目數") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "把清單的項目數存進變數（清單還沒設過時為 0），之後用 {{var:名稱}} 引用。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 is Action.AskInput -> Column {
                     VariableTextField(
                         value = current.prompt,
@@ -795,12 +948,31 @@ fun ActionEditDialog(
                     )
                 }
 
+                is Action.ForEachBegin -> Column {
+                    OutlinedTextField(
+                        value = current.listVariable,
+                        onValueChange = { draft = current.copy(listVariable = it) },
+                        label = { Text("清單變數名稱") },
+                        placeholder = { Text("例如：待辦") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "把清單的每個項目各跑一遍到「結束逐項」之間的動作。" +
+                            "動作中可用 {{迴圈:項目}} 取得目前項目、{{迴圈:次數}} 取得目前是第幾項。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 is Action.Else ->
                     ControlMarkerInfo("前面條件都不成立時，執行到「結束如果」之間的動作。")
 
                 is Action.EndIf -> ControlMarkerInfo("「如果」區塊的結尾。")
                 is Action.EndWhile -> ControlMarkerInfo("「一直重複…當」區塊的結尾。")
                 is Action.EndRepeat -> ControlMarkerInfo("「重複 N 次」區塊的結尾。")
+                is Action.EndForEach -> ControlMarkerInfo("「逐項重複」區塊的結尾。")
 
                 is Action.RunRoutine -> Column {
                     if (routineChoices.isEmpty()) {
@@ -881,7 +1053,19 @@ fun availableTokens(
         }
         val askVarNames = precedingActions.filterIsInstance<Action.AskInput>().map { it.variableName.trim() }
         val menuVarNames = precedingActions.filterIsInstance<Action.ChooseMenu>().map { it.variableName.trim() }
-        val varNames = (setVarNames + calcVarNames + exprVarNames + askVarNames + menuVarNames)
+        // 清單動作也都寫進一般變數（清單本身也是變數），一併列入
+        val listVarNames = precedingActions.mapNotNull { action ->
+            when (action) {
+                is Action.ListCreate -> action.variableName.trim()
+                is Action.ListSplit -> action.variableName.trim()
+                is Action.ListAppend -> action.variableName.trim()
+                is Action.ListGet -> action.variableName.trim()
+                is Action.ListCount -> action.variableName.trim()
+                else -> null
+            }
+        }
+        val varNames = (setVarNames + calcVarNames + exprVarNames + askVarNames + menuVarNames +
+            listVarNames)
             .filter { it.isNotBlank() }
             .distinct()
         if (varNames.isNotEmpty()) {
@@ -903,7 +1087,8 @@ fun availableTokens(
                     VarToken("日期", "{{日期}}"),
                     VarToken("星期", "{{星期}}"),
                     VarToken("電量", "{{電量}}"),
-                    VarToken("迴圈次數", "{{迴圈:次數}}")
+                    VarToken("迴圈次數", "{{迴圈:次數}}"),
+                    VarToken("迴圈項目", "{{迴圈:項目}}")
                 )
             )
         )
@@ -1349,13 +1534,20 @@ private fun isActionValid(action: Action): Boolean = when (action) {
         val eq = action.text.indexOf('=')
         eq > 0 && action.text.substring(0, eq).isNotBlank()
     }
+    // 清單動作：一定要有寫入的變數名稱；讀清單的兩個另需指定來源清單
+    is Action.ListCreate -> action.variableName.isNotBlank()
+    is Action.ListSplit -> action.variableName.isNotBlank()
+    is Action.ListAppend -> action.variableName.isNotBlank()
+    is Action.ListGet -> action.variableName.isNotBlank() && action.listVariable.isNotBlank()
+    is Action.ListCount -> action.variableName.isNotBlank() && action.listVariable.isNotBlank()
     // 互動動作：一定要有存入的變數名稱；選單另需至少一個非空選項
     is Action.AskInput -> action.variableName.isNotBlank()
     is Action.ChooseMenu -> action.variableName.isNotBlank() && action.options.any { it.isNotBlank() }
-    // 流程控制標記沒有必填欄位（條件空＝恆成立）
+    // 逐項重複要有清單才知道跑什麼；其餘流程控制標記沒有必填欄位（條件空＝恆成立）
+    is Action.ForEachBegin -> action.listVariable.isNotBlank()
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
-    is Action.EndRepeat -> true
+    is Action.EndRepeat, is Action.EndForEach -> true
     // 執行程序必須選定一個目標程序
     is Action.RunRoutine -> action.routineId.isNotBlank()
 }

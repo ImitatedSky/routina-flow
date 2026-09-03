@@ -145,6 +145,11 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.SetGlobalVariable -> "設定全域變數"
     is Action.Calculate -> "計算"
     is Action.Expression -> "運算式"
+    is Action.ListCreate -> "建立清單"
+    is Action.ListSplit -> "切割成清單"
+    is Action.ListAppend -> "加入清單項目"
+    is Action.ListGet -> "取清單項目"
+    is Action.ListCount -> "清單長度"
     is Action.AskInput -> "詢問輸入"
     is Action.ChooseMenu -> "選單選擇"
     is Action.IfBegin -> "如果"
@@ -155,6 +160,8 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.EndWhile -> "結束重複"
     is Action.RepeatBegin -> "重複 N 次"
     is Action.EndRepeat -> "結束重複 N 次"
+    is Action.ForEachBegin -> "逐項重複"
+    is Action.EndForEach -> "結束逐項"
     is Action.RunRoutine -> "執行程序"
 }
 
@@ -186,6 +193,11 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.SetGlobalVariable -> "設定全域變數"
     is Action.Calculate -> "計算"
     is Action.Expression -> "運算式"
+    is Action.ListCreate -> "建立清單"
+    is Action.ListSplit -> "切割成清單"
+    is Action.ListAppend -> "加入項目到"
+    is Action.ListGet -> "取清單項目"
+    is Action.ListCount -> "清單長度"
     is Action.AskInput -> "詢問輸入"
     is Action.ChooseMenu -> "選單選擇"
     is Action.IfBegin -> "如果"
@@ -196,6 +208,8 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.EndWhile -> "結束重複"
     is Action.RepeatBegin -> "重複"
     is Action.EndRepeat -> "結束重複"
+    is Action.ForEachBegin -> "逐項重複"
+    is Action.EndForEach -> "結束逐項"
     is Action.RunRoutine -> "執行程序"
 }
 
@@ -245,6 +259,15 @@ fun actionParamText(action: Action): String = when (action) {
 
     is Action.Expression -> truncate(action.text.flattenLines().ifBlank { "未設定" }, 24)
 
+    // 清單動作：顯示「存到的變數 = 內容」，沒內容時只顯示變數名稱
+    is Action.ListCreate -> listParam(action.variableName, action.items)
+    is Action.ListSplit -> listParam(action.variableName, action.input)
+    is Action.ListAppend -> listParam(action.variableName, action.item)
+    is Action.ListGet ->
+        truncate("${action.listVariable.ifBlank { "未設定" }} 第 ${action.index} 項", 20)
+
+    is Action.ListCount -> truncate(action.listVariable.ifBlank { "未設定" }, 20)
+
     // 積木參數欄顯示提示文字（截斷）；未填提示時退回顯示變數名稱
     is Action.AskInput ->
         truncate(action.prompt.flattenLines().ifBlank { action.variableName.ifBlank { "未設定" } }, 20)
@@ -256,9 +279,17 @@ fun actionParamText(action: Action): String = when (action) {
     is Action.ElseIf -> conditionSummary(action.condition)
     is Action.WhileBegin -> conditionSummary(action.condition)
     is Action.RepeatBegin -> numParam(action.countExpr, "${action.count} 次")
+    is Action.ForEachBegin -> truncate(action.listVariable.ifBlank { "未設定" }, 20)
     is Action.Else -> "其餘情況"
-    is Action.EndIf, is Action.EndWhile, is Action.EndRepeat -> ""
+    is Action.EndIf, is Action.EndWhile, is Action.EndRepeat, is Action.EndForEach -> ""
     is Action.RunRoutine -> action.routineName.ifBlank { "選擇程序" }
+}
+
+/** 清單動作的參數欄：「變數 = 內容」，內容為空時只顯示變數名稱 */
+private fun listParam(variableName: String, content: String): String {
+    val name = variableName.ifBlank { "未命名" }
+    val value = content.flattenLines()
+    return if (value.isBlank()) name else truncate("$name = $value", 20)
 }
 
 /** 判斷式的積木參數摘要，例如「電量 > 20」 */

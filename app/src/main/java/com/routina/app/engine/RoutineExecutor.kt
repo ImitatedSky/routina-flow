@@ -255,6 +255,26 @@ object RoutineExecutor {
                     i = end + 1
                 }
 
+                is Action.ForEachBegin -> {
+                    val end = matchingEnd(actions, i, to)
+                    val items = parseList(listRaw(action.listVariable.trim(), ctx))
+                    val savedIndex = ctx.trigger[LOOP_INDEX_KEY]
+                    val savedItem = ctx.trigger[LOOP_ITEM_KEY]
+                    var k = 0
+                    while (k < items.size && budget[0] > 0) {
+                        ctx.trigger[LOOP_ITEM_KEY] = items[k]
+                        ctx.trigger[LOOP_INDEX_KEY] = (k + 1).toString()
+                        runProgram(
+                            actions, i + 1, end, context, routine, source, canLaunchActivity,
+                            allowWait, fgsSwitch, ctx, results, budget
+                        )
+                        k++
+                    }
+                    restoreLoopIndex(ctx, savedIndex)
+                    restoreLoopItem(ctx, savedItem)
+                    i = end + 1
+                }
+
                 is Action.RunRoutine -> {
                     runSubRoutine(
                         action, context, source, canLaunchActivity, allowWait,
@@ -265,7 +285,7 @@ object RoutineExecutor {
 
                 // 直接走到的孤立標記（正常流程下配對跳轉不會停在這）→ 略過
                 is Action.ElseIf, is Action.Else, is Action.EndIf,
-                is Action.EndWhile, is Action.EndRepeat -> i++
+                is Action.EndWhile, is Action.EndRepeat, is Action.EndForEach -> i++
 
                 else -> {
                     budget[0]--
@@ -322,9 +342,11 @@ object RoutineExecutor {
         var j = start + 1
         while (j < to) {
             when (actions[j]) {
-                is Action.IfBegin, is Action.WhileBegin, is Action.RepeatBegin -> depth++
-                is Action.EndIf, is Action.EndWhile, is Action.EndRepeat ->
-                    if (depth == 0) return j else depth--
+                is Action.IfBegin, is Action.WhileBegin, is Action.RepeatBegin,
+                is Action.ForEachBegin -> depth++
+
+                is Action.EndIf, is Action.EndWhile, is Action.EndRepeat,
+                is Action.EndForEach -> if (depth == 0) return j else depth--
 
                 else -> {}
             }
@@ -339,9 +361,11 @@ object RoutineExecutor {
         var j = from + 1
         while (j < to) {
             when (actions[j]) {
-                is Action.IfBegin, is Action.WhileBegin, is Action.RepeatBegin -> depth++
-                is Action.EndIf, is Action.EndWhile, is Action.EndRepeat ->
-                    if (depth == 0) return j else depth--
+                is Action.IfBegin, is Action.WhileBegin, is Action.RepeatBegin,
+                is Action.ForEachBegin -> depth++
+
+                is Action.EndIf, is Action.EndWhile, is Action.EndRepeat,
+                is Action.EndForEach -> if (depth == 0) return j else depth--
 
                 is Action.ElseIf, is Action.Else -> if (depth == 0) return j
                 else -> {}
@@ -363,8 +387,24 @@ object RoutineExecutor {
         if (saved != null) ctx.trigger[LOOP_INDEX_KEY] = saved else ctx.trigger.remove(LOOP_INDEX_KEY)
     }
 
+    /** 逐項重複結束後還原 {{迴圈:項目}}（規則同 [restoreLoopIndex]） */
+    private fun restoreLoopItem(ctx: RunContext, saved: String?) {
+        if (saved != null) ctx.trigger[LOOP_ITEM_KEY] = saved else ctx.trigger.remove(LOOP_ITEM_KEY)
+    }
+
     /** 迴圈計數在情境中的鍵；以 {{迴圈:次數}} 引用 */
     private const val LOOP_INDEX_KEY = "迴圈:次數"
+
+    /** 逐項重複的目前項目在情境中的鍵；以 {{迴圈:項目}} 引用 */
+    private const val LOOP_ITEM_KEY = "迴圈:項目"
+
+    /** 讀清單變數的原始文字：先找一般變數、再找全域變數，都沒有就視為空清單 */
+    private fun listRaw(name: String, ctx: RunContext): String =
+        ctx.vars[name] ?: ctx.globals[name] ?: ""
+
+    /** 清單文字 → 項目（一行一個，去掉前後空白、略過空行） */
+    private fun parseList(text: String): List<String> =
+        text.lines().map { it.trim() }.filter { it.isNotBlank() }
 
     /** 「執行程序」的最大巢狀深度，配合呼叫堆疊擋住循環／過深呼叫 */
     private const val MAX_CALL_DEPTH = 10
@@ -453,6 +493,11 @@ object RoutineExecutor {
                 is Action.SetGlobalVariable -> doSetGlobalVariable(resolved, ctx)
                 is Action.Calculate -> doCalculate(resolved, ctx)
                 is Action.Expression -> doExpression(resolved, ctx)
+                is Action.ListCreate -> doListCreate(resolved, ctx)
+                is Action.ListSplit -> doListSplit(resolved, ctx)
+                is Action.ListAppend -> doListAppend(resolved, ctx)
+                is Action.ListGet -> doListGet(resolved, ctx)
+                is Action.ListCount -> doListCount(resolved, ctx)
                 is Action.AskInput ->
                     doAskInput(context, routine, index, resolved, canLaunchActivity, ctx)
 
@@ -461,7 +506,8 @@ object RoutineExecutor {
                 // 流程控制標記與「執行程序」由直譯器 runProgram 處理；走到這裡不做事
                 is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
                 is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
-                is Action.EndRepeat, is Action.RunRoutine -> null
+                is Action.EndRepeat, is Action.ForEachBegin, is Action.EndForEach,
+                is Action.RunRoutine -> null
             }
             ActionResult(if (note == null) description else "$description（$note）", true)
         } catch (t: Throwable) {
@@ -501,6 +547,12 @@ object RoutineExecutor {
             left = VariableResolver.resolve(action.left, ctx),
             right = VariableResolver.resolve(action.right, ctx)
         )
+
+        // 清單動作：只解析內容欄位；清單／變數名稱是識別碼、不解析（同 SetVariable.name）
+        is Action.ListCreate -> action.copy(items = VariableResolver.resolve(action.items, ctx))
+        is Action.ListSplit -> action.copy(input = VariableResolver.resolve(action.input, ctx))
+        is Action.ListAppend -> action.copy(item = VariableResolver.resolve(action.item, ctx))
+        is Action.ListGet -> action.copy(index = VariableResolver.resolve(action.index, ctx))
 
         // 互動動作：解析提示 / 選項 / 預設值；變數名稱是識別碼、不解析（同 SetVariable.name）
         is Action.AskInput -> action.copy(
@@ -1078,6 +1130,61 @@ object RoutineExecutor {
         return "$name = $value"
     }
 
+    /** 建立清單：把多行文字正規化（去空白、略過空行）後存成清單變數 */
+    private fun doListCreate(action: Action.ListCreate, ctx: RunContext): String {
+        val name = requireVarName(action.variableName)
+        val items = parseList(action.items)
+        ctx.vars[name] = items.joinToString("\n")
+        return "$name（${items.size} 項）"
+    }
+
+    /** 切割成清單：把文字依分隔符切開存成清單變數；分隔符留空時退回逗號 */
+    private fun doListSplit(action: Action.ListSplit, ctx: RunContext): String {
+        val name = requireVarName(action.variableName)
+        val delimiter = action.delimiter.ifEmpty { "," }
+        val items = action.input.split(delimiter).map { it.trim() }.filter { it.isNotBlank() }
+        ctx.vars[name] = items.joinToString("\n")
+        return "$name（${items.size} 項）"
+    }
+
+    /** 加入清單項目：接到清單最後（項目本身是多行時各自算一項）；清單沒設過視為空清單 */
+    private fun doListAppend(action: Action.ListAppend, ctx: RunContext): String {
+        val name = requireVarName(action.variableName)
+        val added = parseList(action.item)
+        if (added.isEmpty()) error("要加入的項目是空的")
+        val items = parseList(listRaw(name, ctx)) + added
+        ctx.vars[name] = items.joinToString("\n")
+        return "$name（${items.size} 項）"
+    }
+
+    /** 取清單項目：取第 N 項（1 起算）存進變數；不是數字或超出範圍記為失敗 */
+    private fun doListGet(action: Action.ListGet, ctx: RunContext): String {
+        val name = requireVarName(action.variableName)
+        val listName = requireListName(action.listVariable)
+        val index = action.index.trim().toIntOrNull()
+            ?: error("項目編號不是數字：「${action.index}」")
+        val items = parseList(listRaw(listName, ctx))
+        val item = items.getOrNull(index - 1)
+            ?: error("第 $index 項超出範圍（清單「$listName」共 ${items.size} 項）")
+        ctx.vars[name] = item
+        return "$name = $item"
+    }
+
+    /** 清單長度：把項目數存進變數（清單沒設過為 0） */
+    private fun doListCount(action: Action.ListCount, ctx: RunContext): String {
+        val name = requireVarName(action.variableName)
+        val listName = requireListName(action.listVariable)
+        val count = parseList(listRaw(listName, ctx)).size
+        ctx.vars[name] = count.toString()
+        return "$name = $count"
+    }
+
+    private fun requireVarName(raw: String): String =
+        raw.trim().ifBlank { error("未設定要存入的變數名稱") }
+
+    private fun requireListName(raw: String): String =
+        raw.trim().ifBlank { error("未設定清單變數名稱") }
+
     /**
      * 詢問輸入：暫停並跳出對話框請使用者輸入文字，答案存進具名變數。
      * 使用者取消 / 逾時未回應時記為失敗（不影響其餘動作）。
@@ -1626,6 +1733,23 @@ object RoutineExecutor {
 
         is Action.Expression -> "運算式：${redactText(action.text, 40)}"
 
+        is Action.ListCreate ->
+            "建立清單 ${varLabel(action.variableName)}：${redactText(action.items)}"
+
+        is Action.ListSplit ->
+            "切割成清單 ${varLabel(action.variableName)}：以「${action.delimiter}」切 " +
+                redactText(action.input)
+
+        is Action.ListAppend ->
+            "加入清單項目 ${varLabel(action.variableName)}：${redactText(action.item)}"
+
+        is Action.ListGet ->
+            "取清單項目 ${varLabel(action.listVariable)} 第 ${action.index} 項 → " +
+                varLabel(action.variableName)
+
+        is Action.ListCount ->
+            "清單長度 ${varLabel(action.listVariable)} → ${varLabel(action.variableName)}"
+
         is Action.AskInput -> "詢問輸入：${redactText(action.prompt)}"
         is Action.ChooseMenu -> "選單選擇：${redactText(action.prompt)}"
 
@@ -1637,8 +1761,13 @@ object RoutineExecutor {
         is Action.EndWhile -> "結束重複"
         is Action.RepeatBegin -> "重複 ${numLabel(action.countExpr, action.count)} 次"
         is Action.EndRepeat -> "結束重複 N 次"
+        is Action.ForEachBegin -> "逐項重複：${varLabel(action.listVariable)}"
+        is Action.EndForEach -> "結束逐項"
         is Action.RunRoutine -> "執行程序：${action.routineName.ifBlank { "(未選)" }}"
     }
+
+    /** 變數／清單名稱的顯示（給紀錄用），沒填時標示未設定 */
+    private fun varLabel(name: String): String = name.trim().ifBlank { "(未設定)" }
 
     /** 判斷式的簡短描述（給紀錄／積木用），例如「電量 > 20」 */
     private fun describeCondition(c: Condition): String =

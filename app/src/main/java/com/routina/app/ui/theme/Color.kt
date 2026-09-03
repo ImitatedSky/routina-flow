@@ -173,9 +173,14 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.Expression -> RoutinaColors.ActionSetVariable
     is Action.AskInput -> RoutinaColors.ActionSetVariable
     is Action.ChooseMenu -> RoutinaColors.ActionSetVariable
+    // 清單動作也寫入變數，歸變數家族同色
+    is Action.ListCreate, is Action.ListSplit, is Action.ListAppend,
+    is Action.ListGet, is Action.ListCount -> RoutinaColors.ActionSetVariable
+
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
-    is Action.EndRepeat -> RoutinaColors.ActionControl
+    is Action.EndRepeat, is Action.ForEachBegin,
+    is Action.EndForEach -> RoutinaColors.ActionControl
     is Action.RunRoutine -> RoutinaColors.ActionRunRoutine
 }
 
