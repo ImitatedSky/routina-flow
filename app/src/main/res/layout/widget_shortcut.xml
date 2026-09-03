@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  單一捷徑（預設 2x2）：整塊都是那支程序的顏色，點一下就執行。
+  放置時由 WidgetConfigActivity 挑程序，名稱與顏色在這裡填入。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_shortcut_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:id="@+id/widget_shortcut_bg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:src="@drawable/widget_tile_shape"
+        android:contentDescription="@null" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="10dp">
+
+        <TextView
+            android:id="@+id/widget_shortcut_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:maxLines="3"
+            android:ellipsize="end"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:text="@string/app_name"
+            android:textColor="@color/widget_tile_text" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/widget_run_hint"
+            android:textSize="18sp"
+            android:textColor="@color/widget_tile_text" />
+    </LinearLayout>
+</FrameLayout>

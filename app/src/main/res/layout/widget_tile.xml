@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  格狀小工具的一格：程序色的圓角色塊 ＋ 置中名稱。整格可點（fill-in intent 帶 routineId）。
+  底色用 ImageView 疊字而非 View 背景，是為了讓 setColorFilter 換色時保留圓角。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_tile_root"
+    android:layout_width="match_parent"
+    android:layout_height="72dp">
+
+    <ImageView
+        android:id="@+id/widget_tile_bg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:src="@drawable/widget_tile_shape"
+        android:contentDescription="@null" />
+
+    <TextView
+        android:id="@+id/widget_tile_name"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:padding="6dp"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:textColor="@color/widget_tile_text" />
+</FrameLayout>

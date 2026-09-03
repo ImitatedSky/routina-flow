@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  單一捷徑小工具：預設 2x2（minWidth/Height 用 70*格數-30 的官方換算）。
+  android:configure＝放置時先開設定畫面挑一支程序，沒挑就不會建立這個小工具。
+  updatePeriodMillis=0：內容只有名稱與顏色，改到時由 RoutinaWidgets.refresh 主動重畫。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_shortcut_description"
+    android:configure="com.routina.app.ui.WidgetConfigActivity"
+    android:initialLayout="@layout/widget_shortcut"
+    android:previewLayout="@layout/widget_shortcut" />

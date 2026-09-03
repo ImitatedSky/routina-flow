@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 一排捷徑：預設 4x1，色塊磚橫排；拉寬拉高會自己增減欄列數（版面用 auto_fit）。 -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="40dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="0"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_row_description"
+    android:initialLayout="@layout/widget_row"
+    android:previewLayout="@layout/widget_row" />

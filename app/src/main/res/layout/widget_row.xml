@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  一排捷徑（預設 4x1）：色塊磚橫向排列。欄數用 auto_fit 而非固定 4，
+  這樣使用者把小工具拉寬拉窄時會自己增減欄數，不會把磚擠爛。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:padding="6dp">
+
+    <GridView
+        android:id="@+id/widget_list"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:numColumns="auto_fit"
+        android:columnWidth="76dp"
+        android:stretchMode="columnWidth"
+        android:horizontalSpacing="6dp"
+        android:verticalSpacing="6dp"
+        android:gravity="center" />
+
+    <TextView
+        android:id="@+id/widget_empty"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:text="@string/widget_empty"
+        android:textSize="13sp"
+        android:textColor="@color/widget_text_secondary"
+        android:visibility="gone" />
+</FrameLayout>

@@ -255,12 +255,14 @@
         </service>
 
         <!--
-          桌面小工具：列出例行程序、點一列即執行。
+          桌面小工具：列出例行程序、點一列即執行。四種尺寸各註冊一個 provider，
+          系統的小工具選單才會分別列出（放置後仍可自由縮放）。
           receiver exported=true 是 App Widget 的規定（系統／啟動器要能送 APPWIDGET_UPDATE 廣播）；
           service 要求 BIND_REMOTEVIEWS，確保只有系統能綁定它提供清單資料。
         -->
         <receiver
             android:name=".engine.RoutinaWidgetProvider"
+            android:label="@string/widget_list_label"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -269,6 +271,56 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_routina_info" />
         </receiver>
+
+        <receiver
+            android:name=".engine.RoutinaRowWidgetProvider"
+            android:label="@string/widget_row_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_row_info" />
+        </receiver>
+
+        <receiver
+            android:name=".engine.RoutinaColumnWidgetProvider"
+            android:label="@string/widget_column_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_column_info" />
+        </receiver>
+
+        <receiver
+            android:name=".engine.RoutinaShortcutWidgetProvider"
+            android:label="@string/widget_shortcut_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_shortcut_info" />
+        </receiver>
+
+        <!--
+          單一捷徑小工具的放置設定畫面。exported=true 是 APPWIDGET_CONFIGURE 的規定
+          （由啟動器啟動）；它只做一件事＝把選到的程序 id 記給某個 appWidgetId，
+          不執行任何程序，因此外部啟動最多只是開一個選單畫面。
+        -->
+        <activity
+            android:name=".ui.WidgetConfigActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Routina">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
 
         <service
             android:name=".engine.RoutinaWidgetService"

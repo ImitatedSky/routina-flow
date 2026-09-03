@@ -28,7 +28,7 @@ object RoutineManager {
         GeofenceManager.syncAll(appContext)
         MonitorService.syncWithRoutines(appContext)
         // 清單內容或名稱可能已變，讓桌面小工具重讀
-        RoutinaWidgetProvider.refresh(appContext)
+        RoutinaWidgets.refresh(appContext)
     }
 
     fun setEnabled(context: Context, routineId: String, enabled: Boolean) {
@@ -45,7 +45,7 @@ object RoutineManager {
         val appContext = context.applicationContext
         RoutineRepository.get(appContext).reorder(from, to)
         // 小工具依清單順序顯示，排序後也要刷新
-        RoutinaWidgetProvider.refresh(appContext)
+        RoutinaWidgets.refresh(appContext)
     }
 
     /**
@@ -72,7 +72,7 @@ object RoutineManager {
         GeofenceManager.remove(appContext, routineId)
         RoutineRepository.get(appContext).delete(routineId)
         MonitorService.syncWithRoutines(appContext)
-        RoutinaWidgetProvider.refresh(appContext)
+        RoutinaWidgets.refresh(appContext)
     }
 
     /**

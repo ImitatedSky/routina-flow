@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  直排捷徑：預設 1x4，色塊磚直向排成一條。版面與「一排捷徑」共用（GridView 用 auto_fit，
+  一格寬時自然就是單欄），差別只在放置時的預設尺寸；放上去之後一樣能自由縮放。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="40dp"
+    android:minHeight="250dp"
+    android:targetCellWidth="1"
+    android:targetCellHeight="4"
+    android:updatePeriodMillis="0"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_column_description"
+    android:initialLayout="@layout/widget_row"
+    android:previewLayout="@layout/widget_row" />

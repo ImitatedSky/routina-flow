@@ -5,4 +5,18 @@
     <!-- 桌面小工具 -->
     <string name="widget_empty">還沒有例行程序</string>
     <string name="widget_run_hint">▶</string>
+
+    <!-- 小工具在系統選單裡的名稱與說明（四種尺寸） -->
+    <string name="widget_list_label">Routina 清單</string>
+    <string name="widget_row_label">Routina 一排捷徑</string>
+    <string name="widget_column_label">Routina 直排捷徑</string>
+    <string name="widget_shortcut_label">Routina 單一捷徑</string>
+    <string name="widget_row_description">橫排色塊，把常用的程序放在桌面一列裡。</string>
+    <string name="widget_column_description">直排色塊，沿著桌面邊放一整條常用程序。</string>
+    <string name="widget_shortcut_description">一格一支程序，點一下直接執行。</string>
+
+    <!-- 單一捷徑小工具的設定畫面 -->
+    <string name="widget_config_title">選擇要執行的程序</string>
+    <string name="widget_config_empty">還沒有例行程序，先回 Routina 建立一個。</string>
+    <string name="widget_shortcut_missing">程序已刪除</string>
 </resources>

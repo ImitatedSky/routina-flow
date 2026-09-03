@@ -7,4 +7,10 @@
     <color name="widget_text_primary">#FF1C1B1F</color>
     <color name="widget_text_secondary">#FF5F6368</color>
     <color name="widget_accent">#FF1565C0</color>
+
+    <!--
+      色塊磚上的文字：磚底是程序自己的顏色（自帶背景，不受啟動器亮暗影響），
+      因此固定白字即可，values-night 刻意不覆寫。
+    -->
+    <color name="widget_tile_text">#FFFFFFFF</color>
 </resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  色塊磚的底：實心圓角方塊。執行時用 setColorFilter 換成該程序的顏色
+  （比 setBackgroundColor 好在圓角不會被純色蓋掉），所以這裡的顏色只是預覽時的預設值。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="12dp" />
+    <solid android:color="@color/widget_accent" />
+</shape>
