@@ -9,7 +9,7 @@ import com.routina.app.model.Trigger
 /**
  * 積木色表（唯一來源）。
  *
- * 25 種觸發 × 15 種動作時「一個型別一個獨立色相」已超出人眼可辨識的範圍，
+ * 25 種觸發 × 37 種動作時「一個型別一個獨立色相」已超出人眼可辨識的範圍，
  * 因此改為**功能分組色系**：一組一色相、組內只差色階，分組與調色盤的分組小標一致。
  *
  * 使用者明確回饋過：**文字才是主要辨識依據，顏色只負責分組輔助**。
@@ -67,6 +67,8 @@ object RoutinaColors {
     val ActionHttp = Color(0xFF3E86C5)
     val ActionSetAlarm = Color(0xFF5FA2D8)
     val ActionShare = Color(0xFF7BB2DF)
+    val ActionDial = Color(0xFF8EBDE5)
+    val ActionSendSms = Color(0xFFA0C8EA)
 
     // ---------- 動作：聲音（紅） ----------
     val ActionVolume = Color(0xFF9E3535)
@@ -81,6 +83,9 @@ object RoutinaColors {
     val ActionBrightness = Color(0xFFCE7C27)
     val ActionDnd = Color(0xFFD38728)
     val ActionBluetooth = Color(0xFFD69629)
+    val ActionAutoRotate = Color(0xFFD9A23A)
+    val ActionScreenTimeout = Color(0xFFDDAE4C)
+    val ActionGetLocation = Color(0xFFE1B95E)
 
     // ---------- 動作：媒體與擷取（紫） ----------
     val ActionTakePhoto = Color(0xFF652F86)
@@ -151,6 +156,8 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.Share -> RoutinaColors.ActionShare
     is Action.Http -> RoutinaColors.ActionHttp
     is Action.SetAlarm -> RoutinaColors.ActionSetAlarm
+    is Action.Dial -> RoutinaColors.ActionDial
+    is Action.SendSms -> RoutinaColors.ActionSendSms
     is Action.MediaVolume -> RoutinaColors.ActionVolume
     is Action.RingerMode -> RoutinaColors.ActionRinger
     is Action.Speak -> RoutinaColors.ActionSpeak
@@ -161,6 +168,9 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.Brightness -> RoutinaColors.ActionBrightness
     is Action.Dnd -> RoutinaColors.ActionDnd
     is Action.Bluetooth -> RoutinaColors.ActionBluetooth
+    is Action.AutoRotate -> RoutinaColors.ActionAutoRotate
+    is Action.ScreenTimeout -> RoutinaColors.ActionScreenTimeout
+    is Action.GetLocation -> RoutinaColors.ActionGetLocation
     is Action.TakePhoto -> RoutinaColors.ActionTakePhoto
     is Action.BurstPhoto -> RoutinaColors.ActionBurstPhoto
     is Action.RecordAudio -> RoutinaColors.ActionRecordAudio

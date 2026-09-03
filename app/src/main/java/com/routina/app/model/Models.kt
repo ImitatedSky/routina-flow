@@ -478,6 +478,53 @@ sealed class Action {
         val percentExpr: String = ""
     ) : Action()
 
+    /** 自動旋轉開／關，與螢幕亮度一樣需要「修改系統設定」權限 */
+    @Serializable
+    @SerialName("auto_rotate")
+    data class AutoRotate(val on: Boolean = true) : Action()
+
+    /**
+     * 螢幕逾時：多久沒操作就自動關螢幕，需要「修改系統設定」權限。
+     * [secondsExpr] 非空時執行期解析覆寫 [seconds]。
+     */
+    @Serializable
+    @SerialName("screen_timeout")
+    data class ScreenTimeout(
+        val seconds: Int = 30,
+        val secondsExpr: String = ""
+    ) : Action()
+
+    /**
+     * 撥號：帶號碼開啟系統撥號畫面（ACTION_DIAL），由使用者自己按下通話鍵，
+     * 因此不需要通話權限。[number] 可含變數 token。
+     */
+    @Serializable
+    @SerialName("dial")
+    data class Dial(val number: String = "") : Action()
+
+    /**
+     * 傳簡訊：開啟簡訊 App 並預先填好收件人與內容（ACTION_SENDTO），由使用者自己按送出。
+     * 刻意不要求 SEND_SMS 權限（該權限受 Play 政策嚴格限制，也不該替使用者直接發訊）。
+     * [number]／[message] 可含變數 token。
+     */
+    @Serializable
+    @SerialName("send_sms")
+    data class SendSms(
+        val number: String = "",
+        val message: String = ""
+    ) : Action()
+
+    /**
+     * 取得目前位置：向定位服務要一次座標，依 [format] 存進具名變數 [variableName]
+     * （後續以 `{{var:名稱}}` 引用）。需要位置權限。
+     */
+    @Serializable
+    @SerialName("get_location")
+    data class GetLocation(
+        val variableName: String = "",
+        val format: LocationFormat = LocationFormat.LAT_LNG
+    ) : Action()
+
     /** HTTP 請求（webhook）：GET 或 POST，body 為純文字 */
     @Serializable
     @SerialName("http")
@@ -727,6 +774,9 @@ sealed class Action {
         val RECORD_SECONDS_SAFE = 1..3600
         val PERCENT_SAFE = 0..100
 
+        /** 螢幕逾時秒數：下限取系統最短的 15 秒，上限 30 分鐘 */
+        val SCREEN_TIMEOUT_SAFE = 15..1800
+
         /** 流程控制安全上限：擋掉無限迴圈與失控的巢狀執行 */
         val REPEAT_COUNT_SAFE = 0..10000
         const val WHILE_MAX_ITERATIONS = 10000
@@ -793,6 +843,19 @@ enum class MathOp {
     @SerialName("mul") MULTIPLY,
     @SerialName("div") DIVIDE,
     @SerialName("mod") MODULO
+}
+
+/** 「取得目前位置」存進變數的格式 */
+@Serializable
+enum class LocationFormat {
+    @SerialName("lat_lng")
+    LAT_LNG,
+
+    @SerialName("lat")
+    LAT,
+
+    @SerialName("lng")
+    LNG
 }
 
 @Serializable
