@@ -95,9 +95,6 @@ object RoutinaColors {
     val ActionText = Color(0xFF546E7A)
     val ActionSetVariable = Color(0xFF67818C)
 
-    // ---------- 動作：資料處理（橄欖綠，與變數藍灰、流程控制棕都分得開） ----------
-    val ActionDataProcess = Color(0xFF6E7B3F)
-
     // ---------- 動作：流程控制（棕，與判斷/迴圈語意區隔於其他家族） ----------
     val ActionControl = Color(0xFF6D4C41)
 
@@ -176,9 +173,9 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.Expression -> RoutinaColors.ActionSetVariable
     is Action.AskInput -> RoutinaColors.ActionSetVariable
     is Action.ChooseMenu -> RoutinaColors.ActionSetVariable
-    is Action.JsonGet -> RoutinaColors.ActionDataProcess
-    is Action.TextTransform -> RoutinaColors.ActionDataProcess
-    is Action.DateFormat -> RoutinaColors.ActionDataProcess
+    is Action.JsonGet -> RoutinaColors.ActionSetVariable
+    is Action.TextTransform -> RoutinaColors.ActionSetVariable
+    is Action.DateFormat -> RoutinaColors.ActionSetVariable
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
     is Action.EndRepeat -> RoutinaColors.ActionControl

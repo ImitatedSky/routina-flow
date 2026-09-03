@@ -28,6 +28,10 @@ object JsonPath {
             val next = when {
                 current is JSONObject && step is Step.Key -> current.opt(step.name)
                 current is JSONArray && step is Step.Index -> current.opt(step.at)
+                // 點分隔的純數字段（data.items.0）也當陣列索引用，等同 items[0]
+                current is JSONArray && step is Step.Key ->
+                    step.name.toIntOrNull()?.let { current.opt(it) }
+
                 else -> null
             }
             if (next == null || next == JSONObject.NULL) return null

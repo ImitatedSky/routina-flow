@@ -10,7 +10,8 @@ HTTP 請求已經能把回應存進 `{{result}}`，但那是一整包 JSON 或�
 
 - **新增三個資料處理動作**（各自把結果寫進一個具名變數，之後以 `{{var:名稱}}` 引用）：
   - **從 JSON 取值 `JsonGet`**（`json_get`）：`source`（JSON 文字，可含 token，通常是
-    `{{result}}`）依 `path`（`data.items[0].name` 這類點／中括號路徑）取值。用 Android 內建的
+    `{{result}}`）依 `path` 取值。路徑用點／中括號（`data.items[0].name`），
+    點分隔的純數字段也當陣列索引（`data.items.0.name`）。用 Android 內建的
     org.json，**不加新依賴**。取到陣列輸出「一行一個項目」，取到物件輸出原始 JSON 文字，
     路徑不存在記為失敗。
   - **文字處理 `TextTransform`**（`text_transform`）：對 `input` 做一次 `TextOp` 轉換——
@@ -18,8 +19,8 @@ HTTP 請求已經能把回應存進 `{{result}}`，但那是一整包 JSON 或�
     用不到的操作在編輯畫面不顯示參數欄。
   - **日期時間 `DateFormat`**（`date_format`）：把「現在 + 天數/分鐘偏移」依 java.time 的
     `pattern` 格式化（minSdk 26 可直接用 `java.time`），格式不合法記為失敗。
-- **調色盤新增「資料處理」組**（排在「變數」之後），色表新增一個橄欖綠家族色
-  `ActionDataProcess`，維持「一組一色相」。
+- 三塊都是「算出一個值存進具名變數」，與設定變數同源，因此**歸入既有「變數」調色盤組**
+  （不新增分組），積木色沿用 `ActionSetVariable`。
 - 路徑解析獨立成 `engine/JsonPath`（不塞進已經很長的 RoutineExecutor），
   取不到一律回 null，由動作決定使用者看到的訊息。
 
@@ -34,7 +35,7 @@ HTTP 請求已經能把回應存進 `{{result}}`，但那是一整包 JSON 或�
 - 受影響 specs：routine-actions（新增三個資料處理動作）
 - 受影響程式碼：model（`Action.JsonGet` / `TextTransform` / `DateFormat`、`TextOp` 列舉與
   `usesArgs`）、engine（新檔 `JsonPath`、`RoutineExecutor` 的 dispatch／`resolveAction`／
-  `describe`／三個 `doXxx` 與 `textOpLabel`）、ui（調色盤新組、ActionEditor 編輯器＋驗證＋
-  可插入變數、UiLabels、Color）
+  `describe`／三個 `doXxx` 與 `textOpLabel`）、ui（調色盤「變數」組加三塊、ActionEditor
+  編輯器＋驗證＋可插入變數、UiLabels、Color 的 `actionColor` 三個分支）
 - 清單變數沿用全 App 共同格式：一行一個項目（`\n` 分隔）
 - 序列化只新增、欄位皆有預設；舊 `routines.json` 照常讀入；無新依賴

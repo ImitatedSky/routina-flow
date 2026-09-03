@@ -134,6 +134,8 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
     PaletteGroup("流程", listOf(Action.Wait(), Action.Clipboard())),
     // 運算式（Python 式一行「名稱 = 值」）取代原本拆散的「設定變數 / 計算」；
     // 舊型別仍可反序列化與執行，只是不再從調色盤新增。
+    // 資料處理三塊（從 JSON 取值 / 文字處理 / 日期時間）也是「算出一個值存進具名變數」，
+    // 與設定變數同源，歸在「變數」同一組。
     PaletteGroup(
         "變數",
         listOf(
@@ -141,14 +143,11 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
             Action.Text(),
             Action.SetGlobalVariable(),
             Action.AskInput(),
-            Action.ChooseMenu()
+            Action.ChooseMenu(),
+            Action.JsonGet(),
+            Action.TextTransform(),
+            Action.DateFormat()
         )
-    ),
-    // 資料處理：把 HTTP 回應或前一步的文字整理成後續動作要用的形狀。
-    // 與「變數」分開一組——這些不是「設一個值」，而是「把值加工過再存起來」。
-    PaletteGroup(
-        "資料處理",
-        listOf(Action.JsonGet(), Action.TextTransform(), Action.DateFormat())
     ),
     PaletteGroup(
         "流程控制",
