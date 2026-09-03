@@ -3,8 +3,11 @@ package com.routina.app.ui
 import android.Manifest
 import android.app.Activity
 import android.bluetooth.BluetoothManager
+import android.content.ComponentName
 import android.content.Context
 import android.provider.Settings
+import android.service.quicksettings.TileService
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,9 +36,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.AddToHomeScreen
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
@@ -97,6 +102,8 @@ import java.time.ZoneOffset
 import com.routina.app.engine.BtAclReceiver
 import com.routina.app.engine.GeofenceManager
 import com.routina.app.engine.NfcTagReader
+import com.routina.app.engine.RunFromOutside
+import com.routina.app.engine.RunRoutineTileService
 import com.routina.app.model.Action
 import com.routina.app.model.AppTarget
 import com.routina.app.model.BtDevice
@@ -394,8 +401,59 @@ fun EditScreen(
                                     showTriggerLimit = true
                                 }
                             )
-                            // 複製／刪除只在編輯既有程序時有意義（新建還沒有可複製 / 可刪的對象）
+                            // 設為磚／加到桌面／複製／刪除只在編輯既有程序時有意義：
+                            // 磚與捷徑都以已存檔的 id 為準，新建（尚未存檔）沒有可指向的對象
                             if (existing != null) {
+                                DropdownMenuItem(
+                                    text = { Text("設為快速設定磚") },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.Dashboard, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        RunFromOutside.setTileRoutineId(context, draft.id)
+                                        // 磚若已加入快速設定，要求它重新監聽以立即更新標籤；
+                                        // 尚未加入時是無害的 no-op
+                                        runCatching {
+                                            TileService.requestListeningState(
+                                                context,
+                                                ComponentName(
+                                                    context,
+                                                    RunRoutineTileService::class.java
+                                                )
+                                            )
+                                        }
+                                        Toast.makeText(
+                                            context,
+                                            "已設為快速設定磚：${draft.name.ifBlank { "未命名" }}",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("加到桌面") },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.AddToHomeScreen,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        val requested = RunFromOutside.pinShortcut(
+                                            context,
+                                            draft.id,
+                                            draft.name
+                                        )
+                                        if (!requested) {
+                                            Toast.makeText(
+                                                context,
+                                                RunFromOutside.MSG_PIN_UNSUPPORTED,
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                )
                                 DropdownMenuItem(
                                     text = { Text("複製此程序") },
                                     leadingIcon = {

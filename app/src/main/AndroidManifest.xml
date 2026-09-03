@@ -159,6 +159,19 @@
         </activity>
 
         <!--
+          桌面捷徑的執行跳板：透明、讀完 routineId extra 就 finish（同 NfcDispatchActivity 的做法）。
+          exported=true 讓桌面啟動器能啟動它（釘選捷徑以顯式元件啟動）；noHistory + excludeFromRecents
+          確保不留在返回堆疊與最近使用。routineId 是隨機 UUID，等同這台裝置上這支程序的私有識別。
+        -->
+        <activity
+            android:name=".engine.RunRoutineActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Routina.Invisible" />
+
+        <!--
           通知觸發：由系統綁定的通知監聽服務，需要使用者在「通知存取權」中開啟。
           系統負責啟停 → 通知觸發不需要任何常駐服務。
         -->
@@ -208,6 +221,22 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="automation" />
+        </service>
+
+        <!--
+          快速設定磚：一鍵執行使用者指定的例行程序。permission 為系統要求的
+          BIND_QUICK_SETTINGS_TILE（只有系統能綁定），intent-filter 讓系統認得這是一塊磚，
+          標籤／圖示為磚在「編輯快速設定」面板中的預設外觀（實際標籤執行期改為程序名稱）。
+        -->
+        <service
+            android:name=".engine.RunRoutineTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_notification"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
         </service>
 
         <receiver
