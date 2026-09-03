@@ -441,6 +441,7 @@ object RoutineExecutor {
                 is Action.MediaVolume -> doMediaVolume(context, resolved, ctx)
                 is Action.RingerMode -> doRingerMode(context, resolved)
                 is Action.Bluetooth -> doBluetooth(context, routine, index, resolved)
+                is Action.WifiToggle -> doWifiToggle(context, routine, index, resolved, canLaunchActivity)
                 is Action.Flashlight -> doFlashlight(context, resolved)
                 is Action.Speak -> doSpeak(context, resolved)
                 is Action.Vibrate -> doVibrate(context, resolved, ctx)
@@ -743,6 +744,31 @@ object RoutineExecutor {
         }
         if (!started) error("系統拒絕切換藍牙")
         return null
+    }
+
+    /**
+     * Wi-Fi 開關。
+     *
+     * Android 10 起系統禁止第三方 App 直接切換 Wi-Fi，只能把使用者帶到系統的 Wi-Fi 面板
+     * （API 29+）或 Wi-Fi 設定頁自行切換——絕不記成假成功，描述會註明需自行切換。
+     * 沿用「開啟 App／網址」的背景 Activity 啟動處理：前景直接開面板、背景改發可點擊通知。
+     */
+    private fun doWifiToggle(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.WifiToggle,
+        canLaunchActivity: Boolean
+    ): String? {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            Intent(Settings.Panel.ACTION_WIFI)
+        } else {
+            Intent(Settings.ACTION_WIFI_SETTINGS)
+        }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val title = if (action.on) "開啟 Wi-Fi" else "關閉 Wi-Fi"
+        // 前景直接開面板時 launchOrNotify 回 null，補一句說明使用者仍要自己切換；背景則回它的通知說明
+        return launchOrNotify(context, routine, index, intent, title, canLaunchActivity, verb = "切換 Wi-Fi")
+            ?: "系統不允許 App 直接切換，已開啟 Wi-Fi 面板請自行切換"
     }
 
     /** 手電筒：取第一個有閃光燈的鏡頭（通常是主鏡頭） */
@@ -1747,6 +1773,7 @@ object RoutineExecutor {
 
         is Action.RingerMode -> "響鈴模式：${ringerLabel(action.mode)}"
         is Action.Bluetooth -> "藍牙：${if (action.enable) "開啟" else "關閉"}"
+        is Action.WifiToggle -> "Wi-Fi：${if (action.on) "開啟" else "關閉"}"
         is Action.Flashlight -> "手電筒：${if (action.on) "開啟" else "關閉"}"
         is Action.Speak -> "朗讀文字：${redactText(action.text)}"
         is Action.Vibrate -> "震動：${numLabel(action.millisExpr, action.millis)} 毫秒"

@@ -127,6 +127,7 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
             Action.Brightness(),
             Action.Dnd(),
             Action.Bluetooth(),
+            Action.WifiToggle(),
             Action.AutoRotate(),
             Action.ScreenTimeout(),
             Action.GetLocation()
@@ -332,7 +333,7 @@ private fun PaletteSheet(
     // 內容不長時 Expanded 仍只有內容的高度，短清單不會變成滿版。
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        // 37 種動作 / 25 種觸發加上分組小標已遠超一個 sheet 的高度，內容必須可捲動，
+        // 38 種動作 / 25 種觸發加上分組小標已遠超一個 sheet 的高度，內容必須可捲動，
         // 否則展開到全高後底部的積木完全搆不到。
         //
         // 用 verticalScroll 的 Column 而非 LazyColumn：ModalBottomSheet 已經為

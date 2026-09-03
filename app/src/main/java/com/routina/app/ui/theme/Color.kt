@@ -9,7 +9,7 @@ import com.routina.app.model.Trigger
 /**
  * 積木色表（唯一來源）。
  *
- * 25 種觸發 × 37 種動作時「一個型別一個獨立色相」已超出人眼可辨識的範圍，
+ * 25 種觸發 × 38 種動作時「一個型別一個獨立色相」已超出人眼可辨識的範圍，
  * 因此改為**功能分組色系**：一組一色相、組內只差色階，分組與調色盤的分組小標一致。
  *
  * 使用者明確回饋過：**文字才是主要辨識依據，顏色只負責分組輔助**。
@@ -83,6 +83,7 @@ object RoutinaColors {
     val ActionBrightness = Color(0xFFCE7C27)
     val ActionDnd = Color(0xFFD38728)
     val ActionBluetooth = Color(0xFFD69629)
+    val ActionWifiToggle = Color(0xFFD79C31)
     val ActionAutoRotate = Color(0xFFD9A23A)
     val ActionScreenTimeout = Color(0xFFDDAE4C)
     val ActionGetLocation = Color(0xFFE1B95E)
@@ -168,6 +169,7 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.Brightness -> RoutinaColors.ActionBrightness
     is Action.Dnd -> RoutinaColors.ActionDnd
     is Action.Bluetooth -> RoutinaColors.ActionBluetooth
+    is Action.WifiToggle -> RoutinaColors.ActionWifiToggle
     is Action.AutoRotate -> RoutinaColors.ActionAutoRotate
     is Action.ScreenTimeout -> RoutinaColors.ActionScreenTimeout
     is Action.GetLocation -> RoutinaColors.ActionGetLocation

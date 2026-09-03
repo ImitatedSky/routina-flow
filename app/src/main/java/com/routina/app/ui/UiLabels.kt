@@ -127,6 +127,7 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.MediaVolume -> "音量"
     is Action.RingerMode -> "響鈴模式"
     is Action.Bluetooth -> "藍牙"
+    is Action.WifiToggle -> "Wi-Fi"
     is Action.Flashlight -> "手電筒"
     is Action.Speak -> "朗讀文字"
     is Action.Vibrate -> "震動"
@@ -173,6 +174,7 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.MediaVolume -> "${volumeStreamName(action.stream)}音量設為"
     is Action.RingerMode -> "響鈴模式切為"
     is Action.Bluetooth -> "藍牙"
+    is Action.WifiToggle -> "Wi-Fi"
     is Action.Flashlight -> "手電筒"
     is Action.Speak -> "朗讀"
     is Action.Vibrate -> "震動"
@@ -220,6 +222,7 @@ fun actionParamText(action: Action): String = when (action) {
     is Action.MediaVolume -> numParam(action.percentExpr, "${action.percent}%")
     is Action.RingerMode -> ringerModeName(action.mode)
     is Action.Bluetooth -> if (action.enable) "開啟" else "關閉"
+    is Action.WifiToggle -> if (action.on) "開啟" else "關閉"
     is Action.Flashlight -> if (action.on) "開啟" else "關閉"
     is Action.Speak -> truncate(action.text.ifBlank { "未設定" }, 20)
     is Action.Vibrate -> numParam(action.millisExpr, "${action.millis} 毫秒")

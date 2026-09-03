@@ -447,6 +447,16 @@ sealed class Action {
     @SerialName("bluetooth")
     data class Bluetooth(val enable: Boolean = true) : Action()
 
+    /**
+     * 開啟／關閉 Wi-Fi。
+     *
+     * Android 10 起系統禁止第三方 App 直接切換 Wi-Fi，只能把使用者帶到系統的 Wi-Fi 面板／
+     * 設定頁自行切換（誠實降級，絕不記成假成功）。[on] 只表達使用者意圖，用於文案顯示。
+     */
+    @Serializable
+    @SerialName("wifi_toggle")
+    data class WifiToggle(val on: Boolean = true) : Action()
+
     /** 手電筒開／關 */
     @Serializable
     @SerialName("flashlight")

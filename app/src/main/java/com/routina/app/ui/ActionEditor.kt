@@ -239,6 +239,18 @@ fun ActionEditDialog(
                     BluetoothPermissionNotice()
                 }
 
+                is Action.WifiToggle -> Column {
+                    OnOffChips(current.on) { draft = current.copy(on = it) }
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Android 10 起系統禁止 App 直接切換 Wi-Fi。" +
+                            "執行時會開啟系統的 Wi-Fi 面板，由你自己切換開關或選擇網路。" +
+                            "由背景觸發且系統禁止背景啟動時，會改發一則可點擊的通知。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 is Action.Flashlight -> Column {
                     OnOffChips(current.on) { draft = current.copy(on = it) }
                     Spacer(Modifier.height(12.dp))
@@ -1465,6 +1477,7 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.MediaVolume -> true
     is Action.RingerMode -> true
     is Action.Bluetooth -> true
+    is Action.WifiToggle -> true
     is Action.Flashlight -> true
     is Action.Speak -> action.text.isNotBlank()
     is Action.Vibrate -> true
