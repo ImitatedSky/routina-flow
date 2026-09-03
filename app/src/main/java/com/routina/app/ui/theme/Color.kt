@@ -81,6 +81,8 @@ object RoutinaColors {
     val ActionBrightness = Color(0xFFCE7C27)
     val ActionDnd = Color(0xFFD38728)
     val ActionBluetooth = Color(0xFFD69629)
+    val ActionSnapshotSettings = Color(0xFFBA5A22)
+    val ActionRestoreSettings = Color(0xFFDDA135)
 
     // ---------- 動作：媒體與擷取（紫） ----------
     val ActionTakePhoto = Color(0xFF652F86)
@@ -161,6 +163,8 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.Brightness -> RoutinaColors.ActionBrightness
     is Action.Dnd -> RoutinaColors.ActionDnd
     is Action.Bluetooth -> RoutinaColors.ActionBluetooth
+    is Action.SnapshotSettings -> RoutinaColors.ActionSnapshotSettings
+    is Action.RestoreSettings -> RoutinaColors.ActionRestoreSettings
     is Action.TakePhoto -> RoutinaColors.ActionTakePhoto
     is Action.BurstPhoto -> RoutinaColors.ActionBurstPhoto
     is Action.RecordAudio -> RoutinaColors.ActionRecordAudio

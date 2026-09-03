@@ -124,7 +124,9 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
             Action.Vibrate(),
             Action.Brightness(),
             Action.Dnd(),
-            Action.Bluetooth()
+            Action.Bluetooth(),
+            Action.SnapshotSettings,
+            Action.RestoreSettings
         )
     ),
     PaletteGroup(

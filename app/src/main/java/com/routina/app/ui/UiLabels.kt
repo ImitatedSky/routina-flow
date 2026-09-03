@@ -131,6 +131,8 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.Vibrate -> "震動"
     is Action.Dnd -> "勿擾模式"
     is Action.Brightness -> "螢幕亮度"
+    is Action.SnapshotSettings -> "記住目前設定"
+    is Action.RestoreSettings -> "回復設定"
     is Action.Http -> "HTTP 請求"
     is Action.MediaKey -> "播放控制"
     is Action.Wait -> "等待"
@@ -172,6 +174,8 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.Vibrate -> "震動"
     is Action.Dnd -> "勿擾模式"
     is Action.Brightness -> "螢幕亮度設為"
+    is Action.SnapshotSettings -> "記住目前設定"
+    is Action.RestoreSettings -> "回復設定"
     is Action.Http -> "HTTP ${httpMethodName(action.method)}"
     is Action.MediaKey -> "播放控制"
     is Action.Wait -> "等待"
@@ -214,6 +218,8 @@ fun actionParamText(action: Action): String = when (action) {
     is Action.Vibrate -> numParam(action.millisExpr, "${action.millis} 毫秒")
     is Action.Dnd -> if (action.on) "開啟" else "關閉"
     is Action.Brightness -> numParam(action.percentExpr, "${action.percent}%")
+    is Action.SnapshotSettings -> "全部設定"
+    is Action.RestoreSettings -> "全部設定"
     is Action.Http -> truncate(action.url.ifBlank { "未設定" }, 20)
     is Action.MediaKey -> mediaKeyName(action.key)
     is Action.Wait -> numParam(action.secondsExpr, "${action.seconds} 秒")

@@ -508,6 +508,24 @@ sealed class Action {
         val percentExpr: String = ""
     ) : Action()
 
+    /**
+     * 記住目前設定：把當下可調整的裝置設定（各串流音量、響鈴模式、勿擾、螢幕亮度與亮度模式）
+     * 拍成一張快照存起來，供之後的「回復設定」還原。搭配既有的進入／離開類觸發
+     * （例如進入區域 → 記住目前設定＋靜音；離開區域 → 回復設定），就能自己組出
+     * Samsung 情境模式 / Tasker exit task 的「條件結束時還原」效果，不必改動一次觸發的模型。
+     */
+    @Serializable
+    @SerialName("snapshot_settings")
+    data object SnapshotSettings : Action()
+
+    /**
+     * 回復設定：把「記住目前設定」拍下的快照重新套回去，沿用各設定動作的同一套機制與權限降級
+     * （勿擾 / 亮度缺權限時略過該項並註明，絕不崩潰）。尚未有任何快照時記為失敗。
+     */
+    @Serializable
+    @SerialName("restore_settings")
+    data object RestoreSettings : Action()
+
     /** HTTP 請求（webhook）：GET 或 POST，body 為純文字 */
     @Serializable
     @SerialName("http")

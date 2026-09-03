@@ -444,6 +444,8 @@ object RoutineExecutor {
                 is Action.Vibrate -> doVibrate(context, resolved, ctx)
                 is Action.Dnd -> doDnd(context, resolved)
                 is Action.Brightness -> doBrightness(context, resolved, ctx)
+                is Action.SnapshotSettings -> doSnapshotSettings(context)
+                is Action.RestoreSettings -> doRestoreSettings(context, ctx)
                 is Action.Http -> doHttp(resolved, ctx)
                 is Action.MediaKey -> doMediaKey(context, resolved)
                 is Action.Wait -> doWait(resolved, allowWait, ctx)
@@ -752,6 +754,52 @@ object RoutineExecutor {
         val percent = resolveNum(action.percentExpr, action.percent, Action.PERCENT_SAFE, ctx)
         applyBrightness(context, (MAX_BRIGHTNESS * percent / 100f).roundToInt())
         return null
+    }
+
+    /** 記住目前設定：把當下可調整的設定拍成快照（見 [SettingsSnapshot]），供「回復設定」還原 */
+    private fun doSnapshotSettings(context: Context): String? = SettingsSnapshot.capture(context)
+
+    /**
+     * 回復設定：把「記住目前設定」的快照套回去，逐項沿用既有設定動作的機制與權限降級
+     * （doMediaVolume / doRingerMode / doDnd / doBrightness）。缺權限的項目略過並註明，
+     * 尚未有任何快照時整個動作記為失敗。
+     */
+    private fun doRestoreSettings(context: Context, ctx: RunContext): String {
+        val snapshot = SettingsSnapshot.load(context)
+            ?: error("尚未有任何已記住的設定，請先用「記住目前設定」")
+        val skipped = mutableListOf<String>()
+        snapshot.volumes.forEach { (stream, percent) ->
+            runCatching {
+                doMediaVolume(context, Action.MediaVolume(percent = percent, stream = stream), ctx)
+            }.onFailure { skipped += "${volumeStreamLabel(stream)}音量" }
+        }
+        snapshot.ringerMode?.let { mode ->
+            runCatching { doRingerMode(context, Action.RingerMode(mode)) }
+                .onFailure { skipped += "響鈴模式" }
+        }
+        snapshot.dndOn?.let { on ->
+            runCatching { doDnd(context, Action.Dnd(on)) }.onFailure { skipped += "勿擾模式" }
+        }
+        snapshot.brightnessPercent?.let { percent ->
+            runCatching {
+                doBrightness(context, Action.Brightness(percent = percent), ctx)
+                snapshot.brightnessAuto?.let { restoreBrightnessMode(context, it) }
+            }.onFailure { skipped += "螢幕亮度" }
+        }
+        return if (skipped.isEmpty()) "已回復設定" else "已回復設定（略過：${skipped.joinToString("、")}）"
+    }
+
+    /** 還原亮度模式（自動／手動）；與亮度值同屬「修改系統設定」權限，寫在 doBrightness 成功之後 */
+    private fun restoreBrightnessMode(context: Context, auto: Boolean) {
+        Settings.System.putInt(
+            context.contentResolver,
+            Settings.System.SCREEN_BRIGHTNESS_MODE,
+            if (auto) {
+                Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
+            } else {
+                Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            }
+        )
     }
 
     // ---------- 系統設定的實際套用 ----------
@@ -1628,6 +1676,8 @@ object RoutineExecutor {
         is Action.Vibrate -> "震動：${numLabel(action.millisExpr, action.millis)} 毫秒"
         is Action.Dnd -> "勿擾模式：${if (action.on) "開啟" else "關閉"}"
         is Action.Brightness -> "螢幕亮度：${numLabel(action.percentExpr, action.percent)}%"
+        is Action.SnapshotSettings -> "記住目前設定"
+        is Action.RestoreSettings -> "回復設定"
         is Action.Http -> "HTTP ${action.method}：${redactUrl(action.url, stripQuery = true)}"
         is Action.MediaKey -> "播放控制：${mediaKeyLabel(action.key)}"
         is Action.Wait -> "等待 ${numLabel(action.secondsExpr, action.seconds)} 秒"
