@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  小工具描述：約 3x3 格、可調整大小；updatePeriodMillis=0 因為刷新改由資料異動主動觸發
+  （見 RoutinaWidgetProvider.refresh），不靠系統定時更新。previewLayout 直接用主版面當預覽。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="180dp"
+    android:minHeight="180dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="3"
+    android:updatePeriodMillis="0"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:initialLayout="@layout/widget_routina"
+    android:previewLayout="@layout/widget_routina" />

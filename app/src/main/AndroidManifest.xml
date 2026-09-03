@@ -254,6 +254,27 @@
             </intent-filter>
         </service>
 
+        <!--
+          桌面小工具：列出例行程序、點一列即執行。
+          receiver exported=true 是 App Widget 的規定（系統／啟動器要能送 APPWIDGET_UPDATE 廣播）；
+          service 要求 BIND_REMOTEVIEWS，確保只有系統能綁定它提供清單資料。
+        -->
+        <receiver
+            android:name=".engine.RoutinaWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_routina_info" />
+        </receiver>
+
+        <service
+            android:name=".engine.RoutinaWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
         <receiver
             android:name=".engine.AlarmReceiver"
             android:exported="false" />
