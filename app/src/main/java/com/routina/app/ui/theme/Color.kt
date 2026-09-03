@@ -9,7 +9,7 @@ import com.routina.app.model.Trigger
 /**
  * 積木色表（唯一來源）。
  *
- * 17 種觸發 × 15 種動作時「一個型別一個獨立色相」已超出人眼可辨識的範圍，
+ * 25 種觸發 × 15 種動作時「一個型別一個獨立色相」已超出人眼可辨識的範圍，
  * 因此改為**功能分組色系**：一組一色相、組內只差色階，分組與調色盤的分組小標一致。
  *
  * 使用者明確回饋過：**文字才是主要辨識依據，顏色只負責分組輔助**。
@@ -34,6 +34,7 @@ object RoutinaColors {
     val TriggerPowerDisconnected = Color(0xFF3B703D)
     val TriggerBatteryBelow = Color(0xFF468048)
     val TriggerBatteryAbove = Color(0xFF529155)
+    val TriggerBatteryFull = Color(0xFF63A066)
     val TriggerPowerSave = Color(0xFF74AD76)
 
     // ---------- 觸發：連線（青） ----------
@@ -41,13 +42,19 @@ object RoutinaColors {
     val TriggerWifiDisconnected = Color(0xFF177078)
     val TriggerBtConnected = Color(0xFF1B818C)
     val TriggerBtDisconnected = Color(0xFF1F94A2)
+    val TriggerHeadsetPlugged = Color(0xFF2CA1AC)
+    val TriggerHeadsetUnplugged = Color(0xFF54B7C3)
     val TriggerAirplaneMode = Color(0xFF43B0BD)
     val TriggerNfcTag = Color(0xFF65BEC9)
 
     // ---------- 觸發：系統與應用（藍灰） ----------
+    val TriggerDeviceBoot = Color(0xFF313D42)
     val TriggerDndChanged = Color(0xFF3B464B)
+    val TriggerScreenOn = Color(0xFF44545C)
     val TriggerNotificationPosted = Color(0xFF4A585F)
+    val TriggerScreenOff = Color(0xFF546670)
     val TriggerAppState = Color(0xFF5A6C74)
+    val TriggerScreenUnlocked = Color(0xFF67797F)
 
     // ---------- 觸發：位置（紫） ----------
     val TriggerLocationEnter = Color(0xFF4F3A8D)
@@ -116,16 +123,23 @@ fun triggerColor(trigger: Trigger): Color = when (trigger) {
     is Trigger.PowerDisconnected -> RoutinaColors.TriggerPowerDisconnected
     is Trigger.BatteryBelow -> RoutinaColors.TriggerBatteryBelow
     is Trigger.BatteryAbove -> RoutinaColors.TriggerBatteryAbove
+    is Trigger.BatteryFull -> RoutinaColors.TriggerBatteryFull
     is Trigger.PowerSave -> RoutinaColors.TriggerPowerSave
     is Trigger.WifiConnected -> RoutinaColors.TriggerWifiConnected
     is Trigger.WifiDisconnected -> RoutinaColors.TriggerWifiDisconnected
     is Trigger.BtConnected -> RoutinaColors.TriggerBtConnected
     is Trigger.BtDisconnected -> RoutinaColors.TriggerBtDisconnected
+    is Trigger.HeadsetPlugged -> RoutinaColors.TriggerHeadsetPlugged
+    is Trigger.HeadsetUnplugged -> RoutinaColors.TriggerHeadsetUnplugged
     is Trigger.AirplaneMode -> RoutinaColors.TriggerAirplaneMode
     is Trigger.NfcTag -> RoutinaColors.TriggerNfcTag
     is Trigger.DndChanged -> RoutinaColors.TriggerDndChanged
     is Trigger.NotificationPosted -> RoutinaColors.TriggerNotificationPosted
     is Trigger.AppState -> RoutinaColors.TriggerAppState
+    is Trigger.ScreenUnlocked -> RoutinaColors.TriggerScreenUnlocked
+    is Trigger.ScreenOn -> RoutinaColors.TriggerScreenOn
+    is Trigger.ScreenOff -> RoutinaColors.TriggerScreenOff
+    is Trigger.DeviceBoot -> RoutinaColors.TriggerDeviceBoot
     is Trigger.LocationEnter -> RoutinaColors.TriggerLocationEnter
     is Trigger.LocationExit -> RoutinaColors.TriggerLocationExit
 }

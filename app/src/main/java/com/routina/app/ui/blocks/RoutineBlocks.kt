@@ -337,6 +337,8 @@ fun TriggerBlock(
 
             is Trigger.BatteryAbove -> ThresholdParam("電量升到", "以上", trigger.threshold, metrics, content, onParamClick)
 
+            is Trigger.BatteryFull -> BlockLabel("充電完成", metrics, color = content)
+
             is Trigger.LocationEnter -> LocationParam("進入", trigger, metrics, content, onParamClick)
 
             is Trigger.LocationExit -> LocationParam("離開", trigger, metrics, content, onParamClick)
@@ -412,6 +414,18 @@ fun TriggerBlock(
                     onClick = onParamClick?.let { { it(TriggerParam.STATE) } }
                 )
             }
+
+            is Trigger.HeadsetPlugged -> BlockLabel("插入耳機", metrics, color = content)
+
+            is Trigger.HeadsetUnplugged -> BlockLabel("拔除耳機", metrics, color = content)
+
+            is Trigger.ScreenUnlocked -> BlockLabel("解鎖螢幕", metrics, color = content)
+
+            is Trigger.ScreenOn -> BlockLabel("螢幕開啟", metrics, color = content)
+
+            is Trigger.ScreenOff -> BlockLabel("螢幕關閉", metrics, color = content)
+
+            is Trigger.DeviceBoot -> BlockLabel("開機完成", metrics, color = content)
         }
     }
 }
