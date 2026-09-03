@@ -144,6 +144,18 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
             Action.ChooseMenu()
         )
     ),
+    // 清單：一行一個項目的文字變數，配合「逐項重複」把每個項目跑一遍
+    PaletteGroup(
+        "清單",
+        listOf(
+            Action.ListCreate(),
+            Action.ListSplit(),
+            Action.ListAppend(),
+            Action.ListGet(),
+            Action.ListCount()
+        )
+    ),
+    // 「結束」標記不列在調色盤：加入開始標記時由編輯畫面成對插入（見 EditScreen 的 pairedEnd）
     PaletteGroup(
         "流程控制",
         listOf(
@@ -152,6 +164,7 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
             Action.Else,
             Action.WhileBegin(),
             Action.RepeatBegin(),
+            Action.ForEachBegin(),
             Action.RunRoutine()
         )
     )

@@ -1,0 +1,39 @@
+# Change: add-lists-foreach
+
+## Why
+
+變數目前只能存單一一段文字，沒辦法表達「一組東西」。因此像
+「把一段文字切成幾項 → 每一項各做一件事」這種捷徑（iOS 捷徑的 List + Repeat with Each）
+在 Routina 寫不出來，只能用 `重複 N 次` 硬湊。
+
+## What Changes
+
+- **清單格式（與並行開發的功能共用的約定）**：清單就是一段「一行一個項目」的純文字，
+  存在既有的一般變數裡（`{{var:名稱}}` 照常引用）。讀取時 `lines()` → 去前後空白 → 略過空行；
+  寫入時以 `\n` 接起來。不新增資料型別、不動序列化格式。
+- **五個清單動作**（歸「變數」家族，色用 `ActionSetVariable`，調色盤新增「清單」組）：
+  - **建立清單 `ListCreate`**（`list_create`）：多行文字正規化後存成清單變數。
+  - **切割成清單 `ListSplit`**（`list_split`）：依分隔符號切開存成清單變數。
+  - **加入清單項目 `ListAppend`**（`list_append`）：把項目接到清單最後（沒設過視為空清單）。
+  - **取清單項目 `ListGet`**（`list_get`）：取第 N 項（1 起算，可用 `{{迴圈:次數}}`）存進變數；
+    不是數字或超出範圍記為失敗。
+  - **清單長度 `ListCount`**（`list_count`）：把項目數存進變數。
+- **逐項重複 `ForEachBegin` / `EndForEach`**：由並行的 `add-foreach-loop` 變更交付
+  （`listSource` 解析後依換行或逗號切項、項目存進具名變數、位置沿用 `{{迴圈:次數}}`）。
+  本變更只負責清單動作，讓逐項重複有清單可跑。
+
+## Non-goals
+
+- 清單專用的資料型別、巢狀清單、排序 / 去重 / 過濾等清單運算——先做建立、切割、
+  取用、長度、逐項這一組能端到端跑起來的最小集合
+- 清單專用的編輯 UI（拖拉排序的項目編輯器）——先用「一行一個」的文字欄，與選單選擇一致
+- 逐項重複的中斷（break / continue）——維持既有流程控制的單一路徑
+
+## Impact
+
+- 受影響 specs：routine-actions（五個清單動作）
+- 受影響程式碼：model（五個新清單 `Action`）、engine（`RoutineExecutor` 的
+  `parseList`／`listRaw`／五個 `doListXxx`、dispatch／`describe`／`resolveAction`）、
+  ui（調色盤「清單」組、ActionEditor 五個編輯器＋驗證＋可插入清單變數、UiLabels、Color）
+- 逐項重複（`ForEachBegin`／`EndForEach`）與其配對標記在 `add-foreach-loop` 交付
+- 序列化只新增、欄位皆有預設；舊 `routines.json` 照常讀入；無新依賴
