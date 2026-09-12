@@ -1101,6 +1101,14 @@ data class Routine(
      * 只有反向觸發存在的觸發類型才提供這個選項（見 [com.routina.app.engine.RestoreOnExit]）。
      */
     val restoreOnExit: Boolean = false,
+    /**
+     * 執行條件：觸發發生時，這些條件全部成立才真的執行動作。
+     *
+     * 觸發決定「什麼時候檢查」，這裡決定「現在到底要不要做」
+     * （例如：插耳機時播放音樂，但只在平日）。
+     * 空清單＝沒有限制（舊資料相容）；手動執行一律不受限制，才能隨時測試。
+     */
+    val constraints: List<Condition> = emptyList(),
     val createdAt: Long = System.currentTimeMillis()
 ) {
     /** AlarmManager PendingIntent 的 requestCode：由 id 推導，穩定且不衝突。 */

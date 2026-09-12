@@ -157,6 +157,24 @@ object RoutineExecutor {
             callStack.add(routine.id)
         }
 
+        // 執行條件：觸發只決定「什麼時候檢查」，這裡決定「現在到底要不要做」。
+        // 全部成立才往下跑；任一不成立就記一筆說明後結束，不動任何設定、不計入觸發次數。
+        // 手動執行不受限制，否則使用者無法在條件不成立時測試自己的流程。
+        if (source != TriggerSource.MANUAL) {
+            val unmet = routine.constraints.firstOrNull { !ConditionEvaluator.eval(it, ctx) }
+            if (unmet != null) {
+                val skipLog = RunLog(
+                    routineId = routine.id,
+                    routineName = routine.name,
+                    source = source,
+                    results = emptyList(),
+                    note = "執行條件不成立（${describeCondition(unmet)}），未執行"
+                )
+                if (persistBlocking) repository.addLogBlocking(skipLog) else repository.addLog(skipLog)
+                return skipLog
+            }
+        }
+
         // 開了「離開時還原」的觸發執行：動作動手改設定之前，先記下現在的裝置狀態
         if (source != TriggerSource.MANUAL && routine.restoreOnExit) {
             RestoreOnExit.snapshot(appContext, routine)
@@ -1968,7 +1986,12 @@ object RoutineExecutor {
         val values = mutableMapOf(
             "時間" to formatClock("HH:mm", now),
             "日期" to formatClock("yyyy-MM-dd", now),
-            "星期" to weekdayName(now)
+            "星期" to weekdayName(now),
+            // 數值版的時分與星期。「時間」是 09:30 這種字串，大小比較一律不成立，
+            // 要表達「只在 9 點到 18 點」「只在平日」得有能直接比大小的數字。
+            "小時" to hourOfDay(now).toString(),
+            "分鐘" to minuteOfHour(now).toString(),
+            "星期幾" to isoWeekday(now).toString()
         )
         batteryPercent(context)?.let { values["電量"] = it.toString() }
         return values
@@ -2002,6 +2025,26 @@ object RoutineExecutor {
             .format(java.util.Date(timeMs))
 
     /** 星期：週一 … 週日（Calendar 的 DAY_OF_WEEK 以週日為 1） */
+    /** 24 小時制的「時」（0–23），給條件做數值比較用 */
+    private fun hourOfDay(timeMs: Long): Int =
+        java.util.Calendar.getInstance().apply { timeInMillis = timeMs }
+            .get(java.util.Calendar.HOUR_OF_DAY)
+
+    /** 「分」（0–59） */
+    private fun minuteOfHour(timeMs: Long): Int =
+        java.util.Calendar.getInstance().apply { timeInMillis = timeMs }
+            .get(java.util.Calendar.MINUTE)
+
+    /**
+     * 星期的數字版，採 ISO 的週一＝1 … 週日＝7。
+     * 這樣「平日」就是「星期幾 ≤ 5」，比 Calendar 原本週日＝1 的排法直覺得多。
+     */
+    private fun isoWeekday(timeMs: Long): Int {
+        val calendar = java.util.Calendar.getInstance().apply { timeInMillis = timeMs }
+        // Calendar：週日=1、週一=2 … 週六=7；轉成週一=1 … 週日=7
+        return ((calendar.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7) + 1
+    }
+
     private fun weekdayName(timeMs: Long): String {
         val calendar = java.util.Calendar.getInstance().apply { timeInMillis = timeMs }
         val labels = arrayOf("日", "一", "二", "三", "四", "五", "六")

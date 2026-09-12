@@ -1333,18 +1333,22 @@ data class VarTokenGroup(val title: String, val tokens: List<VarToken>)
 
 /**
  * 算出此動作可插入的變數 token，分成四類：
- * 觸發提供的、上一個結果、此動作之前設定過的變數、常用（時間/日期/星期/電量）。
+ * 觸發提供的、上一個結果、此動作之前設定過的變數、常用（時間/日期/星期/時分數值/電量）。
  */
 fun availableTokens(
     trigger: Trigger,
     precedingActions: List<Action>,
-    globalNames: List<String> = emptyList()
+    globalNames: List<String> = emptyList(),
+    // 程序的「執行條件」在任何動作跑之前就判斷，那時沒有上一個結果，列出來只會誤導
+    includeLastResult: Boolean = true
 ): List<VarTokenGroup> =
     buildList {
         triggerTokens(trigger).takeIf { it.isNotEmpty() }?.let {
             add(VarTokenGroup("觸發提供", it))
         }
-        add(VarTokenGroup("上一個結果", listOf(VarToken("上一個動作的輸出", "{{result}}"))))
+        if (includeLastResult) {
+            add(VarTokenGroup("上一個結果", listOf(VarToken("上一個動作的輸出", "{{result}}"))))
+        }
         // 前面用「設定變數 / 計算 / 運算式 / 詢問輸入 / 選單選擇 / 取得目前位置」設過的變數，
         // 都列進「已設定的變數」方便插入
         val setVarNames = precedingActions.filterIsInstance<Action.SetVariable>().map { it.name.trim() }
@@ -1395,6 +1399,9 @@ fun availableTokens(
                     VarToken("時間", "{{時間}}"),
                     VarToken("日期", "{{日期}}"),
                     VarToken("星期", "{{星期}}"),
+                    VarToken("小時 0-23", "{{小時}}"),
+                    VarToken("分鐘 0-59", "{{分鐘}}"),
+                    VarToken("星期幾 1-7", "{{星期幾}}"),
                     VarToken("電量", "{{電量}}"),
                     VarToken("迴圈次數", "{{迴圈:次數}}")
                 )
@@ -1903,9 +1910,9 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.RunRoutine -> action.routineId.isNotBlank()
 }
 
-/** 判斷式編輯器：左值 + 運算子 + 右值（為空／不為空時隱藏右值） */
+/** 判斷式編輯器：左值 + 運算子 + 右值（為空／不為空時隱藏右值）。「如果」積木與程序的執行條件共用 */
 @Composable
-private fun ConditionEditor(
+internal fun ConditionEditor(
     condition: Condition,
     tokenGroups: List<VarTokenGroup>,
     onChange: (Condition) -> Unit
