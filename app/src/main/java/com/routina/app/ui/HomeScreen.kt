@@ -1,5 +1,10 @@
 package com.routina.app.ui
 
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import com.routina.app.data.RoutineBackup
+import com.routina.app.data.RoutineBackupIo
 import android.Manifest
 import android.content.ComponentName
 import android.content.Context
@@ -144,6 +149,32 @@ fun HomeScreen(
     var query by rememberSaveable { mutableStateOf("") }
     // 首頁呈現方式（清單／格狀），持久化於 SharedPreferences，重開 App 保留
     var viewMode by remember { mutableStateOf(loadHomeViewMode(context)) }
+
+    // 匯出／匯入：檔案位置一律交給系統檔案選擇器（SAF），App 不碰共用儲存空間、不需要儲存權限
+    var menuOpen by remember { mutableStateOf(false) }
+    // 讀完備份檔先停在這裡，等使用者挑完要匯入哪幾支才真的寫進去
+    var pendingImport by remember { mutableStateOf<RoutineBackup?>(null) }
+    val notify: (String) -> Unit = { message ->
+        scope.launch { snackbarHostState.showSnackbar(message) }
+    }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        RoutineBackupIo.write(context, uri, routines).fold(
+            onSuccess = { notify("已匯出 $it 支例行程序") },
+            onFailure = { notify(it.message ?: "匯出失敗") }
+        )
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        RoutineBackupIo.read(context, uri).fold(
+            onSuccess = { pendingImport = it },
+            onFailure = { notify(it.message ?: "匯入失敗") }
+        )
+    }
 
     // 權限狀態：從系統設定頁返回時（ON_RESUME）重新檢查，授權完成後引導卡要立即消失
     var canScheduleExact by remember { mutableStateOf(viewModel.canScheduleExactAlarms()) }
@@ -301,6 +332,34 @@ fun HomeScreen(
                     }
                     IconButton(onClick = onOpenLogs) {
                         Icon(Icons.Filled.History, contentDescription = "執行紀錄")
+                    }
+                    // 備份類操作不常用，收進溢位選單，標題列留給每天會點的功能
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                        }
+                        DropdownMenu(
+                            expanded = menuOpen,
+                            onDismissRequest = { menuOpen = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("匯出備份") },
+                                enabled = routines.isNotEmpty(),
+                                onClick = {
+                                    menuOpen = false
+                                    exportLauncher.launch(RoutineBackupIo.suggestedFileName())
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("匯入備份") },
+                                onClick = {
+                                    menuOpen = false
+                                    // 備份檔的 MIME 由各家檔案 App 自行決定（json/octet-stream/text 都有），
+                                    // 收窄反而會讓使用者在選擇器裡看不到自己的檔案，因此不過濾
+                                    importLauncher.launch(arrayOf("*/*"))
+                                }
+                            )
+                        }
                     }
                 }
             )
@@ -559,6 +618,18 @@ fun HomeScreen(
                 onCreate()
             },
             onDismiss = { showTemplateSheet = false }
+        )
+    }
+
+    pendingImport?.let { backup ->
+        ImportPickerDialog(
+            backup = backup,
+            onDismiss = { pendingImport = null },
+            onConfirm = { picked ->
+                pendingImport = null
+                applyImport(context, picked)
+                notify("已匯入 ${picked.size} 支例行程序")
+            }
         )
     }
 }
