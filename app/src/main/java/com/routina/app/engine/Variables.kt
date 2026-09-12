@@ -41,7 +41,9 @@ class RunContext {
  */
 object VariableResolver {
 
-    private val TOKEN = Regex("\\{\\{(.+?)\\}\\}")
+    // internal：編輯畫面要把 token 畫成膠囊，與這裡共用同一個樣式定義，
+    // 免得兩邊對「什麼算一個 token」的認知不一致
+    internal val TOKEN = Regex("\\{\\{(.+?)\\}\\}")
 
     /**
      * 觸發可能提供、但當次觸發未提供時仍應代入空字串的 key。

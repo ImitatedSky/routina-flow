@@ -1453,14 +1453,18 @@ fun VariableTextField(
     LaunchedEffect(value) {
         if (value != field.text) field = TextFieldValue(value, TextRange(value.length))
     }
-    var menuOpen by remember { mutableStateOf(false) }
-
     Column(modifier = modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = field,
-            onValueChange = {
-                field = it
-                onValueChange(it.text)
+            onValueChange = { edited ->
+                // 退格碰到膠囊時整塊拿掉，不留 `{{時間}` 這種壞掉的半截 token
+                val whole = atomicTokenDelete(field.text, edited.text)
+                field = if (whole != null) {
+                    TextFieldValue(whole, TextRange(whole.length.coerceAtMost(edited.selection.start)))
+                } else {
+                    edited
+                }
+                onValueChange(field.text)
             },
             label = { Text(label) },
             placeholder = placeholder?.let { { Text(it) } },
@@ -1469,7 +1473,18 @@ fun VariableTextField(
             maxLines = maxLines,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
             supportingText = supportingText?.let { { Text(it) } },
-            modifier = Modifier.fillMaxWidth()
+            // token 直接顯示成膠囊：底層存的仍是 {{...}} 字串，只是不再讓使用者盯著括號看
+            visualTransformation = tokenChipTransformation(
+                background = MaterialTheme.colorScheme.secondaryContainer,
+                foreground = MaterialTheme.colorScheme.onSecondaryContainer
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                // 從下方膠囊列拖過來的變數，落在這一欄就插進這一欄的游標處
+                .variableDropTarget { token ->
+                    field = insertToken(field, token)
+                    onValueChange(field.text)
+                }
         )
         // 含變數時,用範例值即時預覽「執行後會變成什麼」,讓變數更直觀好懂
         if (field.text.contains("{{")) {
@@ -1482,29 +1497,15 @@ fun VariableTextField(
                 modifier = Modifier.padding(start = 4.dp, top = 4.dp)
             )
         }
-        Box {
-            TextButton(onClick = { menuOpen = true }) { Text("＋ 插入變數") }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                tokenGroups.forEach { group ->
-                    Text(
-                        text = group.title,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                    )
-                    group.tokens.forEach { token ->
-                        DropdownMenuItem(
-                            text = { Text("${token.label}　${token.token}") },
-                            onClick = {
-                                field = insertToken(field, token.token)
-                                onValueChange(field.text)
-                                menuOpen = false
-                            }
-                        )
-                    }
-                }
-            }
-        }
+        // 變數面板：長按膠囊拖進上面的欄位，或輕觸插在游標處
+        VariableChipStrip(
+            groups = tokenGroups,
+            onTapInsert = { token ->
+                field = insertToken(field, token)
+                onValueChange(field.text)
+            },
+            modifier = Modifier.padding(top = 6.dp)
+        )
     }
 }
 
