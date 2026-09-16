@@ -39,8 +39,8 @@ android {
         applicationId = "com.routina.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 34
-        versionName = "0.25.0"
+        versionCode = 35
+        versionName = "1.0.0"
 
         vectorDrawables {
             useSupportLibrary = true
