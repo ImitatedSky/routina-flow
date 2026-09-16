@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#1E88E5</color>
+    <!-- 圖示底色＝標記卡片的奶油色 -->
+    <color name="ic_launcher_background">#FDF8F4</color>
 
     <!-- 桌面小工具（亮色）：自畫底＋自訂文字色，確保在啟動器上對比清楚。暗色見 values-night -->
     <color name="widget_bg">#FFFAFAFA</color>
