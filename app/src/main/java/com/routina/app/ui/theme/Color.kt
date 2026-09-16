@@ -2,6 +2,7 @@ package com.routina.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import com.routina.app.model.Action
 import com.routina.app.model.Routine
 import com.routina.app.model.Trigger
@@ -236,6 +237,53 @@ fun blockContentColor(fill: Color): Color =
     } else {
         Color.White
     }
+
+/**
+ * 積木底色：家族色去飽和、拉到固定明度階。
+ *
+ * 不直接用家族原色鋪滿，是因為 49 種動作全部滿版飽和時，等於沒有任何一塊被強調
+ * （M3 的語彙裡那是 primary/onPrimary，一整排就是一整頁 FAB），
+ * 縮排與分組的訊號會被壓過去。家族辨識改由左緣的色條承擔（見 [blockAccent]）。
+ *
+ * 明度固定而非依原色深淺，是為了讓整份清單勻稱：原本家族內從 L*31 到 L*79 的跨距
+ * 會讓同一家族的兩端看起來像兩個顏色。
+ */
+fun blockTint(fill: Color, dark: Boolean): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(fill.toArgb(), hsv)
+    return if (dark) {
+        Color.hsv(hsv[0], (hsv[1] * 0.55f).coerceAtMost(0.34f), 0.22f)
+    } else {
+        Color.hsv(hsv[0], (hsv[1] * 0.30f).coerceAtMost(0.15f), 0.965f)
+    }
+}
+
+/**
+ * 積木文字色：同色相的深（淺色模式）／淺（深色模式）版本。
+ *
+ * 因為底色的明度是固定的，這個對比也就固定，不需要再依底色深淺在白字與深字之間翻轉
+ * ——同一個家族內文字顏色不一致是很明顯的「沒設計過」訊號。
+ */
+fun blockInk(fill: Color, dark: Boolean): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(fill.toArgb(), hsv)
+    return if (dark) {
+        Color.hsv(hsv[0], (hsv[1] * 0.45f).coerceAtMost(0.30f), 0.92f)
+    } else {
+        Color.hsv(hsv[0], (hsv[1] * 0.85f).coerceAtMost(0.80f), 0.36f)
+    }
+}
+
+/** 家族色條：左緣那一道仍用原本的飽和家族色，顏色面積小但辨識度完整保留 */
+fun blockAccent(fill: Color, dark: Boolean): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(fill.toArgb(), hsv)
+    return if (dark) {
+        Color.hsv(hsv[0], hsv[1].coerceAtMost(0.75f), (hsv[2] * 1.15f).coerceAtMost(0.90f))
+    } else {
+        Color.hsv(hsv[0], hsv[1].coerceAtLeast(0.35f), (hsv[2] * 0.92f).coerceIn(0.35f, 0.82f))
+    }
+}
 
 /** WCAG 對比率（1:1 – 21:1） */
 private fun contrastRatio(a: Color, b: Color): Float {

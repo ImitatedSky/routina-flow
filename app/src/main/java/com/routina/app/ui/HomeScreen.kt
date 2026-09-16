@@ -1019,7 +1019,8 @@ private fun RoutineListRow(
     onRunNow: () -> Unit
 ) {
     val accent = routineAccent(routine)
-    val elevation by animateDpAsState(if (isDragging) 8.dp else 2.dp, label = "listRowElevation")
+    // 靜止不給陰影：填色、外框、陰影三選一，這裡用容器色分層即可。陰影只留給「被拿起來」的那一張
+    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp, label = "listRowElevation")
 
     Card(
         onClick = onClick,
@@ -1214,7 +1215,7 @@ private fun RoutineGridCell(
             },
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = container),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 0.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(14.dp)) {
             Row(
