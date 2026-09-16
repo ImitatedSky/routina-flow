@@ -1,5 +1,13 @@
 package com.routina.app.ui
 
+import androidx.compose.ui.Alignment
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.border
 import android.content.ClipData
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -139,47 +147,96 @@ fun atomicTokenDelete(old: String, new: String): String? {
 /**
  * 變數膠囊列：長按拖起來，拉進哪個欄位就進哪個欄位。
  *
- * 也保留輕觸插入——拖曳對長文字欄好用，但欄位多的時候點一下仍然最快，兩種都留著不衝突。
+ * 預設收合成一列（可橫向捲動），右緣固定一個「…」展開成分組的完整清單。
+ * 展開是就地攤開而不是開對話框——對話框會蓋住欄位，膠囊就拖不出去了，
+ * 那會讓「全部的變數」剛好變成唯一不能拖的那些。
+ *
+ * 也保留輕觸插入：拖曳對長文字欄好用，但欄位多的時候點一下仍然最快。
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun VariableChipStrip(
     groups: List<VarTokenGroup>,
     onTapInsert: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val tokens = remember(groups) { groups.flatMap { it.tokens } }
-    if (tokens.isEmpty()) return
+    if (groups.all { it.tokens.isEmpty() }) return
+    var expanded by remember { mutableStateOf(false) }
 
-    Row(
-        modifier = modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        tokens.forEach { token ->
-            Text(
-                text = token.label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(MaterialTheme.colorScheme.secondaryContainer)
-                    .clickable { onTapInsert(token.token) }
-                    .dragAndDropSource {
-                        detectTapGestures(
-                            onLongPress = {
-                                startTransfer(
-                                    DragAndDropTransferData(
-                                        ClipData.newPlainText(CHIP_CLIP_LABEL, token.token)
-                                    )
-                                )
-                            },
-                            onTap = { onTapInsert(token.token) }
-                        )
+    Column(modifier = modifier) {
+        if (expanded) {
+            groups.filter { it.tokens.isNotEmpty() }.forEach { group ->
+                Text(
+                    text = group.title,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    group.tokens.forEach { token -> VariableChip(token, onTapInsert) }
+                }
+            }
+            MoreChip(label = "收合", onClick = { expanded = false })
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    groups.flatMap { it.tokens }.forEach { token ->
+                        VariableChip(token, onTapInsert)
                     }
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-            )
+                }
+                // 固定在右緣，不跟著捲走，隨時看得到「還有更多」
+                MoreChip(label = "…", onClick = { expanded = true })
+            }
         }
     }
+}
+
+/** 單一個可拖曳的變數膠囊 */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun VariableChip(token: VarToken, onTapInsert: (String) -> Unit) {
+    Text(
+        text = token.label,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSecondaryContainer,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .dragAndDropSource {
+                detectTapGestures(
+                    onLongPress = {
+                        startTransfer(
+                            DragAndDropTransferData(
+                                ClipData.newPlainText(CHIP_CLIP_LABEL, token.token)
+                            )
+                        )
+                    },
+                    onTap = { onTapInsert(token.token) }
+                )
+            }
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    )
+}
+
+/** 展開／收合用的膠囊，樣子和變數膠囊有別，免得被誤當成可以拖的變數 */
+@Composable
+private fun MoreChip(label: String, onClick: () -> Unit) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .padding(start = 6.dp)
+            .clip(RoundedCornerShape(50))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    )
 }
 
 /**
