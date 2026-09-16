@@ -164,6 +164,7 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.TextTransform -> "文字處理"
     is Action.DateFormat -> "日期時間"
     is Action.AskInput -> "詢問輸入"
+    is Action.NotifyAsk -> "通知詢問"
     is Action.ChooseMenu -> "選單選擇"
     is Action.IfBegin -> "如果"
     is Action.ElseIf -> "否則如果"
@@ -223,6 +224,7 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.TextTransform -> "文字處理"
     is Action.DateFormat -> "日期時間"
     is Action.AskInput -> "詢問輸入"
+    is Action.NotifyAsk -> "通知詢問"
     is Action.ChooseMenu -> "選單選擇"
     is Action.IfBegin -> "如果"
     is Action.ElseIf -> "否則如果"
@@ -318,6 +320,9 @@ fun actionParamText(action: Action): String = when (action) {
     // 積木參數欄顯示提示文字（截斷）；未填提示時退回顯示變數名稱
     is Action.AskInput ->
         truncate(action.prompt.flattenLines().ifBlank { action.variableName.ifBlank { "未設定" } }, 20)
+
+    is Action.NotifyAsk ->
+        truncate(action.text.flattenLines().ifBlank { action.variableName.ifBlank { "未設定" } }, 20)
 
     is Action.ChooseMenu ->
         truncate(action.prompt.flattenLines().ifBlank { action.variableName.ifBlank { "未設定" } }, 20)

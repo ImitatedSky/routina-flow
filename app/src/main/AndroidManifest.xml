@@ -327,6 +327,14 @@
             android:exported="false"
             android:permission="android.permission.BIND_REMOTEVIEWS" />
 
+        <!--
+          通知直接回覆的接收端。exported=false：只有 App 自己建立的 PendingIntent 能觸發，
+          外部程式無法偽造一則回覆、把任意字串塞進流程的變數裡。
+        -->
+        <receiver
+            android:name=".engine.NotificationReplyReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".engine.AlarmReceiver"
             android:exported="false" />

@@ -1109,6 +1109,54 @@ fun ActionEditDialog(
                     )
                 }
 
+                is Action.NotifyAsk -> Column {
+                    VariableTextField(
+                        value = current.title,
+                        onValueChange = { draft = current.copy(title = it) },
+                        label = "通知標題",
+                        tokenGroups = tokenGroups,
+                        placeholder = "留空＝Routina",
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    VariableTextField(
+                        value = current.text,
+                        onValueChange = { draft = current.copy(text = it) },
+                        label = "通知內容",
+                        tokenGroups = tokenGroups,
+                        placeholder = "例如：現在要做什麼？",
+                        minLines = 1,
+                        maxLines = 3
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = current.variableName,
+                        onValueChange = { draft = current.copy(variableName = it) },
+                        label = { Text("回覆存到變數") },
+                        placeholder = { Text("例如：回覆") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = current.replyLabel,
+                        onValueChange = { draft = current.copy(replyLabel = it) },
+                        label = { Text("回覆按鈕文字") },
+                        placeholder = { Text("回覆") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "發一則可以直接回覆的通知然後暫停，你在通知上打的字會存進變數，" +
+                            "之後用 {{var:名稱}} 引用，也能接「如果」依內容分支。" +
+                            "輸入框由系統畫在通知欄上，所以背景觸發時也問得到人。" +
+                            "五分鐘沒回覆就記為失敗。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 is Action.AskInput -> Column {
                     VariableTextField(
                         value = current.prompt,
@@ -1358,6 +1406,8 @@ fun availableTokens(
             if (eq > 0) expr.text.substring(0, eq).trim() else null
         }
         val askVarNames = precedingActions.filterIsInstance<Action.AskInput>().map { it.variableName.trim() }
+        val replyVarNames =
+            precedingActions.filterIsInstance<Action.NotifyAsk>().map { it.variableName.trim() }
         val menuVarNames = precedingActions.filterIsInstance<Action.ChooseMenu>().map { it.variableName.trim() }
         // 清單動作也都寫進一般變數（清單本身也是變數），一併列入
         val listVarNames = precedingActions.mapNotNull { action ->
@@ -1377,7 +1427,7 @@ fun availableTokens(
         val textVarNames = precedingActions.filterIsInstance<Action.TextTransform>().map { it.variableName.trim() }
         val dateVarNames = precedingActions.filterIsInstance<Action.DateFormat>().map { it.variableName.trim() }
         val locVarNames = precedingActions.filterIsInstance<Action.GetLocation>().map { it.variableName.trim() }
-        val varNames = (setVarNames + calcVarNames + exprVarNames + askVarNames + menuVarNames +
+        val varNames = (setVarNames + calcVarNames + exprVarNames + askVarNames + menuVarNames + replyVarNames +
             listVarNames + forEachItemNames + jsonVarNames + textVarNames + dateVarNames + locVarNames)
             .filter { it.isNotBlank() }
             .distinct()
@@ -1901,6 +1951,7 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.TextTransform -> action.variableName.isNotBlank()
     is Action.DateFormat -> action.variableName.isNotBlank()
     is Action.AskInput -> action.variableName.isNotBlank()
+    is Action.NotifyAsk -> action.variableName.isNotBlank()
     is Action.ChooseMenu -> action.variableName.isNotBlank() && action.options.any { it.isNotBlank() }
     // 逐項重複要有項目變數名稱才能把項目存進去；其餘流程控制標記沒有必填欄位（條件空＝恆成立）
     is Action.ForEachBegin -> action.itemVariable.isNotBlank()

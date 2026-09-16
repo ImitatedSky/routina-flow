@@ -833,6 +833,23 @@ sealed class Action {
     ) : Action()
 
     /**
+     * 通知詢問：發一則可直接回覆的通知並暫停，使用者在通知上打的字存進具名變數
+     * [variableName]（後續以 `{{var:名稱}}` 引用，也能接「如果」做分支）。
+     *
+     * 與 [AskInput] 是同一類「等使用者輸入再繼續」的動作，差別在輸入介面是通知而不是對話框，
+     * 因此背景觸發時不需要「顯示在其他應用程式上層」權限也能問得到人。
+     * [title] 與 [text] 可含變數 token。
+     */
+    @Serializable
+    @SerialName("notify_ask")
+    data class NotifyAsk(
+        val title: String = "",
+        val text: String = "",
+        val variableName: String = "",
+        val replyLabel: String = "回覆"
+    ) : Action()
+
+    /**
      * 選單選擇：執行到這裡時暫停，跳出對話框列出 [options] 讓使用者點選一個，
      * 把選中的文字存進具名變數 [variableName]（後續以 `{{var:名稱}}` 引用）。
      * [prompt] 與每個選項都可含變數 token。

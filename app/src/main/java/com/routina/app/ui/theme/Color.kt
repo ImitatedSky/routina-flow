@@ -188,6 +188,7 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.Calculate -> RoutinaColors.ActionSetVariable
     is Action.Expression -> RoutinaColors.ActionSetVariable
     is Action.AskInput -> RoutinaColors.ActionSetVariable
+    is Action.NotifyAsk -> RoutinaColors.ActionSetVariable
     is Action.ChooseMenu -> RoutinaColors.ActionSetVariable
     // 清單動作也寫入變數，歸變數家族同色
     is Action.ListCreate, is Action.ListSplit, is Action.ListAppend,

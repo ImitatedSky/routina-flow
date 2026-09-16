@@ -27,6 +27,7 @@ import android.provider.Settings
 import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
@@ -545,6 +546,7 @@ object RoutineExecutor {
                 is Action.DateFormat -> doDateFormat(resolved, ctx)
                 is Action.AskInput ->
                     doAskInput(context, routine, index, resolved, canLaunchActivity, ctx)
+                is Action.NotifyAsk -> doNotifyAsk(context, routine, index, resolved, ctx)
 
                 is Action.ChooseMenu ->
                     doChooseMenu(context, routine, index, resolved, canLaunchActivity, ctx)
@@ -621,6 +623,11 @@ object RoutineExecutor {
         is Action.AskInput -> action.copy(
             prompt = VariableResolver.resolve(action.prompt, ctx),
             defaultValue = VariableResolver.resolve(action.defaultValue, ctx)
+        )
+
+        is Action.NotifyAsk -> action.copy(
+            title = VariableResolver.resolve(action.title, ctx),
+            text = VariableResolver.resolve(action.text, ctx)
         )
 
         is Action.ChooseMenu -> action.copy(
@@ -1593,6 +1600,70 @@ object RoutineExecutor {
     }
 
     /**
+     * 通知詢問：發一則可直接回覆的通知並暫停，使用者回覆的內容存進具名變數。
+     *
+     * 與「詢問輸入」共用 [InputBridge] 的等待機制，但不需要啟動 Activity——
+     * 通知的輸入框由系統畫在通知欄上，因此背景觸發時也不必倚賴「顯示在其他應用程式上層」權限，
+     * 這是它比對話框可靠的地方。
+     */
+    private suspend fun doNotifyAsk(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.NotifyAsk,
+        ctx: RunContext
+    ): String {
+        val name = action.variableName.trim()
+        if (name.isBlank()) error("未設定要存入的變數名稱")
+
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled()) {
+            error("未授權通知權限，無法發出可回覆的通知")
+        }
+
+        val notificationId = notificationId(routine.id, index)
+        val requestId = InputBridge.nextRequestId()
+        val deferred = InputBridge.open(requestId)
+
+        val label = action.replyLabel.ifBlank { "回覆" }
+        val remoteInput = RemoteInput.Builder(NotificationReplyReceiver.KEY_REPLY)
+            .setLabel(label)
+            .build()
+        val replyAction = NotificationCompat.Action.Builder(
+            R.drawable.ic_notification,
+            label,
+            NotificationReplyReceiver.replyPendingIntent(context, requestId, notificationId)
+        )
+            .addRemoteInput(remoteInput)
+            .setAllowGeneratedReplies(false)
+            .build()
+
+        val notification = NotificationCompat.Builder(context, RoutinaApp.CHANNEL_ACTIONS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(action.title.ifBlank { "Routina" })
+            .setContentText(action.text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(action.text))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .addAction(replyAction)
+            // 不設 ongoing：直接回覆送出後系統會把通知留在「傳送中」狀態，
+            // ongoing 會讓這個狀態清不掉、通知賴在欄位上。使用者滑掉＝不回答，等逾時即可。
+            .setContentIntent(openAppPendingIntent(context, notificationId))
+            .build()
+
+        return try {
+            manager.notify(notificationId, notification)
+            val answer = withTimeoutOrNull(NOTIFY_REPLY_TIMEOUT_MS) { deferred.await() }
+                ?: error("使用者未回覆／已逾時")
+            ctx.vars[name] = answer
+            "$name = $answer"
+        } finally {
+            // 逾時或中途失敗時收掉登記與通知，不留下沒人在等的輸入框
+            InputBridge.cancel(requestId)
+            manager.cancel(notificationId)
+        }
+    }
+
+    /**
      * 選單選擇：暫停並跳出對話框列出選項讓使用者選一個，選中的文字存進具名變數。
      * 沒有可選選項時記為失敗；使用者取消 / 逾時未回應時記為失敗。
      */
@@ -2175,6 +2246,7 @@ object RoutineExecutor {
             "日期時間 ${action.variableName.ifBlank { "(未命名)" }}：${action.pattern}"
 
         is Action.AskInput -> "詢問輸入：${redactText(action.prompt)}"
+        is Action.NotifyAsk -> "通知詢問：${redactText(action.text)}"
         is Action.ChooseMenu -> "選單選擇：${redactText(action.prompt)}"
 
         is Action.IfBegin -> "如果 ${describeCondition(action.condition)}"
@@ -2309,6 +2381,12 @@ object RoutineExecutor {
 
     /** 互動動作（詢問輸入 / 選單選擇）等待使用者回應的上限，逾時記為失敗，不讓流程永遠卡住 */
     private const val INPUT_TIMEOUT_MS = 120_000L
+
+    /**
+     * 通知回覆的等待上限。比對話框的兩分鐘長——對話框就擋在眼前，通知則可能過一陣子才看到。
+     * 仍然要有上限：等待期間執行服務是活著的，不設限等於讓流程無限期佔著資源。
+     */
+    private const val NOTIFY_REPLY_TIMEOUT_MS = 300_000L
 
     /** 取得目前位置的等待上限；室內收不到訊號時不會拖著整條流程 */
     private const val LOCATION_TIMEOUT_MS = 15_000L

@@ -152,6 +152,7 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
             Action.SetGlobalVariable(),
             Action.AskInput(),
             Action.ChooseMenu(),
+            Action.NotifyAsk(),
             Action.JsonGet(),
             Action.TextTransform(),
             Action.DateFormat()
