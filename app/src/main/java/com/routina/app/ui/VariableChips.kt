@@ -1,5 +1,6 @@
 package com.routina.app.ui
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -207,7 +208,11 @@ private fun VariableChip(token: VarToken, onTapInsert: (String) -> Unit) {
         modifier = Modifier
             .clip(RoundedCornerShape(50))
             .background(MaterialTheme.colorScheme.secondaryContainer)
-            .dragAndDropSource {
+            // 新版的簡潔重載：長按起拖由它自己處理，只要回傳要帶走的資料
+            // 用具名參數 block 指定 suspend 重載：新版多了一個 transferData 重載，
+            // 光看 lambda 兩者都能套。長按與輕觸在同一個手勢偵測器裡處理，
+            // 不要另外加 clickable——兩套手勢會互搶，拖曳就起不來。
+            .dragAndDropSource(block = {
                 detectTapGestures(
                     onLongPress = {
                         startTransfer(
@@ -218,7 +223,7 @@ private fun VariableChip(token: VarToken, onTapInsert: (String) -> Unit) {
                     },
                     onTap = { onTapInsert(token.token) }
                 )
-            }
+            })
             .padding(horizontal = 10.dp, vertical = 6.dp)
     )
 }
