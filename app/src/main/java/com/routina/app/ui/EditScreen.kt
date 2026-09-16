@@ -1,5 +1,6 @@
 package com.routina.app.ui
 
+import com.routina.app.ui.blocks.BlockGroupSpacing
 import android.Manifest
 import android.app.Activity
 import android.bluetooth.BluetoothManager
@@ -584,10 +585,21 @@ fun EditScreen(
                     ) { index, action, isDragging ->
                         // 捕捉 ReorderableScope；包一層 Column 後 this 會變成 ColumnScope
                         val reorderScope = this
+                        // 區塊的頭尾多留一點空:分組要成立,組內必須比組間近。
+                        // 原本每個接縫距離都一樣,間距對「哪幾塊是一組」完全沒有貢獻。
+                        val depth = indentLevels.getOrElse(index) { 0 }
+                        val opensGroup = pairedEnd(action) != null
+                        val closesGroup = action is Action.EndIf || action is Action.EndWhile ||
+                            action is Action.EndRepeat || action is Action.EndForEach ||
+                            action is Action.EndOnReply
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(start = (indentLevels.getOrElse(index) { 0 } * 20).dp),
+                                .padding(
+                                    start = (depth * 20).dp,
+                                    top = if (opensGroup) BlockGroupSpacing else 0.dp,
+                                    bottom = if (closesGroup) BlockGroupSpacing else 0.dp
+                                ),
                             verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             InsertPoint(onClick = {

@@ -1,5 +1,10 @@
 package com.routina.app.ui.blocks
 
+import com.routina.app.ui.theme.blockTint
+import com.routina.app.ui.theme.blockInk
+import com.routina.app.ui.theme.blockAccent
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
@@ -89,6 +94,8 @@ data class BlockMetrics(
     val paramSize: TextUnit,
     val paramPaddingH: Dp,
     val paramPaddingV: Dp,
+    /** 參數欄圓角：與積木圓角同心（積木圓角 − 垂直內距） */
+    val paramCorner: Dp,
     val contentPaddingH: Dp,
     val contentPaddingV: Dp,
     val contentSpacing: Dp
@@ -102,8 +109,9 @@ val BlockMetricsNormal = BlockMetrics(
     paramSize = 13.sp,
     paramPaddingH = 10.dp,
     paramPaddingV = 4.dp,
-    contentPaddingH = 12.dp,
-    contentPaddingV = 4.dp,
+    paramCorner = 6.dp,
+    contentPaddingH = 14.dp,
+    contentPaddingV = 8.dp,
     contentSpacing = 6.dp
 )
 
@@ -115,21 +123,35 @@ val BlockMetricsCompact = BlockMetrics(
     paramSize = 11.sp,
     paramPaddingH = 8.dp,
     paramPaddingV = 2.dp,
-    contentPaddingH = 9.dp,
-    contentPaddingV = 3.dp,
+    paramCorner = 5.dp,
+    contentPaddingH = 10.dp,
+    contentPaddingV = 4.dp,
     contentSpacing = 4.dp
 )
 
 fun blockMetrics(compact: Boolean): BlockMetrics =
     if (compact) BlockMetricsCompact else BlockMetricsNormal
 
-/** 堆疊時的垂直間距 */
+/** 堆疊時的垂直間距(同一區塊內) */
 val BlockStackSpacing = 6.dp
+
+/**
+ * 區塊之間的額外間距:進入「如果」之前、離開「結束如果」之後各加這麼多。
+ *
+ * 分組最基本的條件是組內要比組間近;原本組內組外都一樣,間距對分組的貢獻是零。
+ */
+val BlockGroupSpacing = 10.dp
+
+/** 左緣家族色條寬度 */
+val BlockAccentWidth = 4.dp
 
 /** 邊框色＝積木色加深 25% */
 fun blockBorderColor(color: Color): Color = lerp(color, Color.Black, 0.25f)
 
-/** 參數欄底色（Scratch 慣例：白底深字，深淺色模式共用） */
+/**
+ * 參數欄預設底色。飽和積木（觸發帽子）仍用白底深字；
+ * 一般動作積木由呼叫端傳入家族色的更淡版本，避免白色形狀成為列上最刺眼的元素。
+ */
 val BlockParamBackground = Color.White.copy(alpha = 0.9f)
 
 /** 參數欄文字色 */
@@ -175,7 +197,13 @@ enum class TriggerParam {
 }
 
 /**
- * 積木底座：圓角色塊 + 深 25% 邊框 + 內容 padding。
+ * 積木底座:家族色的淡底 + 左緣家族色條 + 內容 padding。
+ *
+ * 只用「底色」一種深度機制:不加外框、靜止時不給陰影。原本同時疊了飽和填色、
+ * 加深 25% 的外框與陰影三種,三者都在說「這是一個獨立表面」,疊起來就是貼紙感。
+ *
+ * [solid] 為 true 時改用飽和實心色——留給觸發帽子積木,一頁一個 hero,
+ * 讓整份清單裡唯一被強調的東西是流程的起點。
  */
 @Composable
 fun BlockSurface(
@@ -184,23 +212,28 @@ fun BlockSurface(
     metrics: BlockMetrics = BlockMetricsNormal,
     border: Color = blockBorderColor(fill),
     dashed: Boolean = false,
+    solid: Boolean = false,
     endPadding: Dp = metrics.contentPaddingH,
     horizontalArrangement: Arrangement.Horizontal = Arrangement.spacedBy(metrics.contentSpacing),
     onClick: (() -> Unit)? = null,
     content: @Composable RowScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(metrics.corner)
+    val dark = isSystemInDarkTheme()
+    val accent = blockAccent(fill, dark)
+    val accentWidth = with(LocalDensity.current) { BlockAccentWidth.toPx() }
 
     var blockModifier = modifier
         .fillMaxWidth()
         .heightIn(min = metrics.minHeight)
         .clip(shape)
-    blockModifier = if (dashed) {
-        blockModifier.dashedBlockOutline(metrics.corner, border)
-    } else {
-        blockModifier
-            .background(fill)
-            .border(1.5.dp, border, shape)
+    blockModifier = when {
+        dashed -> blockModifier.dashedBlockOutline(metrics.corner, border)
+        solid -> blockModifier.background(fill)
+        else -> blockModifier
+            .background(blockTint(fill, dark))
+            // 色條畫在裁切之後,左端自然跟著圓角走,不必另外做形狀
+            .drawBehind { drawRect(accent, size = Size(accentWidth, size.height)) }
     }
     if (onClick != null) blockModifier = blockModifier.clickable(onClick = onClick)
 
@@ -234,7 +267,12 @@ fun BlockLabel(
         text = text,
         color = color,
         fontSize = metrics.labelSize,
-        fontWeight = FontWeight.Bold,
+        // 繁中字型家族只宣告 weight 400，Bold 會被系統演算法「假粗」把筆畫塗糊；
+        // Medium 在舊版落回 Regular（乾淨）、Android 16 才是真 Medium。
+        // 中文的層級改用字級與顏色深淺表達，不靠字重。
+        fontWeight = FontWeight.Medium,
+        // M3 的字距是為拉丁字調的，套在中文上會鬆散
+        letterSpacing = 0.sp,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
@@ -242,7 +280,7 @@ fun BlockLabel(
 }
 
 /**
- * 積木內嵌的白色圓角參數欄。
+ * 積木內嵌的參數欄。
  *
  * [leadingIcon] 非 null 時在文字前顯示小圖示（例如所選 App 的圖示）；載不到圖示時傳 null，
  * 只顯示文字即可（fallback，不破壞既有呼叫）。
@@ -253,11 +291,15 @@ fun ParamField(
     metrics: BlockMetrics = BlockMetricsNormal,
     modifier: Modifier = Modifier,
     leadingIcon: ImageBitmap? = null,
+    paramBackground: Color = BlockParamBackground,
+    paramText: Color = BlockParamContent,
     onClick: (() -> Unit)? = null
 ) {
     var fieldModifier = modifier
-        .clip(RoundedCornerShape(50))
-        .background(BlockParamBackground)
+        // 圓角與積木同心（12dp 積木、上下各留 8dp）而非全圓藥丸：
+        // 全圓形狀塞在圓角方塊裡是最不同心的組合，也是「到處都是藥丸」的廉價感來源
+        .clip(RoundedCornerShape(metrics.paramCorner))
+        .background(paramBackground)
     if (onClick != null) fieldModifier = fieldModifier.clickable(onClick = onClick)
 
     Row(
@@ -277,7 +319,7 @@ fun ParamField(
         }
         Text(
             text = text,
-            color = BlockParamContent,
+            color = paramText,
             fontSize = metrics.paramSize,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
@@ -297,11 +339,13 @@ fun TriggerBlock(
 ) {
     val metrics = blockMetrics(compact)
     val fill = triggerColor(trigger)
+    // 觸發帽子是整份流程唯一保留飽和實心色的積木（一頁一個 hero）
     val content = blockContentColor(fill)
     BlockSurface(
         fill = fill,
         modifier = modifier,
         metrics = metrics,
+        solid = true,
         onClick = onBodyClick
     ) {
         // 手動帽子積木不加「當」前綴、也沒有白色參數欄，只顯示用途說明
@@ -525,7 +569,9 @@ fun ActionBlock(
 ) {
     val metrics = blockMetrics(compact)
     val fill = actionColor(action)
-    val content = blockContentColor(fill)
+    val dark = isSystemInDarkTheme()
+    val content = blockInk(fill, dark)
+    val accentColor = blockAccent(fill, dark)
     // 「開啟 App」動作在參數欄顯示所選 App 的小圖示；其他動作或未選 App 時為 null（只顯示文字）
     val paramIcon = (action as? Action.OpenApp)?.packageName?.let { rememberAppIcon(it) }
 
@@ -581,6 +627,10 @@ fun ActionBlock(
                     metrics = metrics,
                     modifier = Modifier.weight(1f, fill = false),
                     leadingIcon = paramIcon,
+                    // 底已經是家族淡色，參數欄再淡一階即可分出層次；
+                    // 用白色會讓它變成整列最刺眼的東西
+                    paramBackground = accentColor.copy(alpha = 0.14f),
+                    paramText = content,
                     onClick = onBodyClick
                 )
             }
@@ -626,6 +676,9 @@ fun InsertPoint(
     modifier: Modifier = Modifier
 ) {
     val tint = MaterialTheme.colorScheme.primary
+    // 只留插入鈕，不畫連接線：原本兩條全寬細線在每個接縫都出現，
+    // 等於一條反覆出現的分隔線，把整串積木切成等距片段，
+    // 和「這幾塊是一組」的訊息直接對抗。間隙本身已經指出插入位置。
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -633,36 +686,25 @@ fun InsertPoint(
             .clip(RoundedCornerShape(50))
             .clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.Center
     ) {
-        InsertLine(tint, Modifier.weight(1f))
         Box(
             modifier = Modifier
                 .size(20.dp)
                 .clip(CircleShape)
-                .background(tint.copy(alpha = 0.15f)),
+                .background(tint.copy(alpha = 0.10f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Filled.Add,
                 contentDescription = "在此插入動作",
-                tint = tint.copy(alpha = 0.8f),
+                tint = tint.copy(alpha = 0.55f),
                 modifier = Modifier.size(14.dp)
             )
         }
-        InsertLine(tint, Modifier.weight(1f))
     }
 }
 
-@Composable
-private fun InsertLine(tint: Color, modifier: Modifier) {
-    Box(
-        modifier = modifier
-            .height(1.5.dp)
-            .clip(RoundedCornerShape(50))
-            .background(tint.copy(alpha = 0.25f))
-    )
-}
 
 /** 清單預覽超出顯示上限時的灰積木 */
 @Composable

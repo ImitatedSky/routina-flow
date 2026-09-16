@@ -1,5 +1,7 @@
 package com.routina.app.ui.blocks
 
+import com.routina.app.ui.theme.blockInk
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -398,7 +400,7 @@ private fun PaletteBlock(
     enabled: Boolean = true,
     subtitle: String? = null
 ) {
-    val content = blockContentColor(fill)
+    val content = blockInk(fill, isSystemInDarkTheme())
     BlockSurface(
         fill = fill,
         modifier = Modifier.alpha(if (enabled) 1f else 0.4f),
