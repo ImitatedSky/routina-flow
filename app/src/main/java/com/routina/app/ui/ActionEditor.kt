@@ -1333,18 +1333,22 @@ data class VarTokenGroup(val title: String, val tokens: List<VarToken>)
 
 /**
  * 算出此動作可插入的變數 token，分成四類：
- * 觸發提供的、上一個結果、此動作之前設定過的變數、常用（時間/日期/星期/電量）。
+ * 觸發提供的、上一個結果、此動作之前設定過的變數、常用（時間/日期/星期/時分數值/電量）。
  */
 fun availableTokens(
     trigger: Trigger,
     precedingActions: List<Action>,
-    globalNames: List<String> = emptyList()
+    globalNames: List<String> = emptyList(),
+    // 程序的「執行條件」在任何動作跑之前就判斷，那時沒有上一個結果，列出來只會誤導
+    includeLastResult: Boolean = true
 ): List<VarTokenGroup> =
     buildList {
         triggerTokens(trigger).takeIf { it.isNotEmpty() }?.let {
             add(VarTokenGroup("觸發提供", it))
         }
-        add(VarTokenGroup("上一個結果", listOf(VarToken("上一個動作的輸出", "{{result}}"))))
+        if (includeLastResult) {
+            add(VarTokenGroup("上一個結果", listOf(VarToken("上一個動作的輸出", "{{result}}"))))
+        }
         // 前面用「設定變數 / 計算 / 運算式 / 詢問輸入 / 選單選擇 / 取得目前位置」設過的變數，
         // 都列進「已設定的變數」方便插入
         val setVarNames = precedingActions.filterIsInstance<Action.SetVariable>().map { it.name.trim() }
@@ -1395,6 +1399,9 @@ fun availableTokens(
                     VarToken("時間", "{{時間}}"),
                     VarToken("日期", "{{日期}}"),
                     VarToken("星期", "{{星期}}"),
+                    VarToken("小時 0-23", "{{小時}}"),
+                    VarToken("分鐘 0-59", "{{分鐘}}"),
+                    VarToken("星期幾 1-7", "{{星期幾}}"),
                     VarToken("電量", "{{電量}}"),
                     VarToken("迴圈次數", "{{迴圈:次數}}")
                 )
@@ -1446,14 +1453,18 @@ fun VariableTextField(
     LaunchedEffect(value) {
         if (value != field.text) field = TextFieldValue(value, TextRange(value.length))
     }
-    var menuOpen by remember { mutableStateOf(false) }
-
     Column(modifier = modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = field,
-            onValueChange = {
-                field = it
-                onValueChange(it.text)
+            onValueChange = { edited ->
+                // 退格碰到膠囊時整塊拿掉，不留 `{{時間}` 這種壞掉的半截 token
+                val whole = atomicTokenDelete(field.text, edited.text)
+                field = if (whole != null) {
+                    TextFieldValue(whole, TextRange(whole.length.coerceAtMost(edited.selection.start)))
+                } else {
+                    edited
+                }
+                onValueChange(field.text)
             },
             label = { Text(label) },
             placeholder = placeholder?.let { { Text(it) } },
@@ -1462,7 +1473,18 @@ fun VariableTextField(
             maxLines = maxLines,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
             supportingText = supportingText?.let { { Text(it) } },
-            modifier = Modifier.fillMaxWidth()
+            // token 直接顯示成膠囊：底層存的仍是 {{...}} 字串，只是不再讓使用者盯著括號看
+            visualTransformation = tokenChipTransformation(
+                background = MaterialTheme.colorScheme.secondaryContainer,
+                foreground = MaterialTheme.colorScheme.onSecondaryContainer
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                // 從下方膠囊列拖過來的變數，落在這一欄就插進這一欄的游標處
+                .variableDropTarget { token ->
+                    field = insertToken(field, token)
+                    onValueChange(field.text)
+                }
         )
         // 含變數時,用範例值即時預覽「執行後會變成什麼」,讓變數更直觀好懂
         if (field.text.contains("{{")) {
@@ -1475,29 +1497,15 @@ fun VariableTextField(
                 modifier = Modifier.padding(start = 4.dp, top = 4.dp)
             )
         }
-        Box {
-            TextButton(onClick = { menuOpen = true }) { Text("＋ 插入變數") }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                tokenGroups.forEach { group ->
-                    Text(
-                        text = group.title,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                    )
-                    group.tokens.forEach { token ->
-                        DropdownMenuItem(
-                            text = { Text("${token.label}　${token.token}") },
-                            onClick = {
-                                field = insertToken(field, token.token)
-                                onValueChange(field.text)
-                                menuOpen = false
-                            }
-                        )
-                    }
-                }
-            }
-        }
+        // 變數面板：長按膠囊拖進上面的欄位，或輕觸插在游標處
+        VariableChipStrip(
+            groups = tokenGroups,
+            onTapInsert = { token ->
+                field = insertToken(field, token)
+                onValueChange(field.text)
+            },
+            modifier = Modifier.padding(top = 6.dp)
+        )
     }
 }
 
@@ -1903,9 +1911,9 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.RunRoutine -> action.routineId.isNotBlank()
 }
 
-/** 判斷式編輯器：左值 + 運算子 + 右值（為空／不為空時隱藏右值） */
+/** 判斷式編輯器：左值 + 運算子 + 右值（為空／不為空時隱藏右值）。「如果」積木與程序的執行條件共用 */
 @Composable
-private fun ConditionEditor(
+internal fun ConditionEditor(
     condition: Condition,
     tokenGroups: List<VarTokenGroup>,
     onChange: (Condition) -> Unit

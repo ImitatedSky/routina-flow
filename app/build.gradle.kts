@@ -78,6 +78,11 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            // 這個實驗分支的 debug 版獨立成一支 App（Routina Test），
+            // 才能和裝置上的正式版並存、拿真實資料以外的環境試新的變數積木。
+            // FileProvider 的 authority 走 ${applicationId} 與 context.packageName，會自動跟著改，不必另外處理。
+            applicationIdSuffix = ".test"
+            // App 名稱由 src/debug 的資源覆寫（resValue 會和 strings.xml 的同名資源衝突）
         }
     }
 

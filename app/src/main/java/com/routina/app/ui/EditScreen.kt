@@ -50,6 +50,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -244,6 +245,7 @@ fun EditScreen(
     var showMenu by rememberSaveable { mutableStateOf(false) }
     var showColorPicker by rememberSaveable { mutableStateOf(false) }
     var showTriggerLimit by rememberSaveable { mutableStateOf(false) }
+    var showConstraints by rememberSaveable { mutableStateOf(false) }
     var showExitConfirm by rememberSaveable { mutableStateOf(false) }
 
     // 拖曳排序拿起 / 讓位時的觸覺回饋
@@ -400,6 +402,27 @@ fun EditScreen(
                                 onClick = {
                                     showMenu = false
                                     showTriggerLimit = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("執行條件") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Rule, contentDescription = null)
+                                },
+                                trailingIcon = {
+                                    // 設過條件卻忘記，會變成「怎麼都不執行」的疑難雜症，
+                                    // 因此在選單上就把數量顯示出來
+                                    if (draft.constraints.isNotEmpty()) {
+                                        Text(
+                                            draft.constraints.size.toString(),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    showConstraints = true
                                 }
                             )
                             // 設為磚／加到桌面／複製／刪除只在編輯既有程序時有意義：
@@ -944,6 +967,16 @@ fun EditScreen(
         )
     }
 
+    if (showConstraints) {
+        ConstraintsDialog(
+            trigger = draft.trigger,
+            constraints = draft.constraints,
+            globalNames = viewModel.globalNames(),
+            onChange = { draft = draft.copy(constraints = it) },
+            onDismiss = { showConstraints = false }
+        )
+    }
+
     if (showExitConfirm) {
         AlertDialog(
             onDismissRequest = { showExitConfirm = false },
@@ -1044,7 +1077,8 @@ private fun Routine.contentEquals(other: Routine): Boolean =
         maxRuns == other.maxRuns &&
         runCount == other.runCount &&
         expiresAt == other.expiresAt &&
-        restoreOnExit == other.restoreOnExit
+        restoreOnExit == other.restoreOnExit &&
+        constraints == other.constraints
 
 /**
  * 觸發限制（選用）：設定「最多觸發幾次」與「觸發到哪一天」，達到後自動停用此程序。

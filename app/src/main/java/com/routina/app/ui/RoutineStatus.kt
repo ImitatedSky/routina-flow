@@ -293,6 +293,9 @@ fun RoutineStatusChips(
         !routine.enabled -> null
         routine.trigger is Trigger.Time -> nextRunSummary(routine, sunLocation)
         else -> triggerSummary(routine.trigger)
+    }?.let {
+        // 設了執行條件卻忘記，會變成「怎麼都不執行」的疑難雜症；在卡片上就先講明白
+        if (routine.constraints.isEmpty()) it else "$it（有條件）"
     }
     val lastRun = lastRunSummary(lastLog)
     val shownPerm = if (routine.enabled) permIssues.take(maxPermIssues) else emptyList()
