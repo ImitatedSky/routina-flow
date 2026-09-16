@@ -37,6 +37,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          # 這個 action 預設會安裝已被 Google 下架的舊 'tools' 套件，
+          # runner 的 cmdline-tools 升級後 sdkmanager 就找不到它而整步失敗。
+          # 平台與 build-tools 由 Gradle 自行取得，這裡只留仍然存在的 platform-tools。
+          packages: platform-tools
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
@@ -73,6 +78,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          # 這個 action 預設會安裝已被 Google 下架的舊 'tools' 套件，
+          # runner 的 cmdline-tools 升級後 sdkmanager 就找不到它而整步失敗。
+          # 平台與 build-tools 由 Gradle 自行取得，這裡只留仍然存在的 platform-tools。
+          packages: platform-tools
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
