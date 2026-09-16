@@ -436,7 +436,10 @@ sealed class Action {
         val message: String = "",
         val askReply: Boolean = false,
         val variableName: String = "",
-        val replyLabel: String = "回覆"
+        val replyLabel: String = "回覆",
+        /** 等回覆的秒數上限；[replyWaitExpr] 非空時以它為準（可放變數），夾在安全範圍內 */
+        val replyWaitSeconds: Int = DEFAULT_REPLY_WAIT,
+        val replyWaitExpr: String = ""
     ) : Action()
 
     /** 開啟指定 App */
@@ -852,6 +855,14 @@ sealed class Action {
     @SerialName("on_reply_begin")
     data object OnReplyBegin : Action()
 
+    /**
+     * 沒有回覆時：[OnReplyBegin] 區塊的例外分支，等待時間到了還沒人回才走這一段。
+     * 與「否則」一樣夾在區塊中間，兩邊只會執行其中一段。
+     */
+    @Serializable
+    @SerialName("no_reply")
+    data object NoReply : Action()
+
     /** [OnReplyBegin] 的結束標記 */
     @Serializable
     @SerialName("end_on_reply")
@@ -989,6 +1000,13 @@ sealed class Action {
         val REPEAT_COUNT_SAFE = 0..10000
         const val WHILE_MAX_ITERATIONS = 10000
         const val MAX_ACTIONS_PER_RUN = 100000
+
+        /**
+         * 通知等回覆的秒數：預設 30 秒，範圍到 10 分鐘。
+         * 等待期間執行服務是活著的，所以一定要有上限。
+         */
+        const val DEFAULT_REPLY_WAIT = 30
+        val REPLY_WAIT_SAFE = 1..600
 
         /** 播放音效的系統音效類型 */
         const val SOUND_NOTIFICATION = "NOTIFICATION"

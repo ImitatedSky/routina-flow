@@ -31,6 +31,12 @@ object InputBridge {
         return deferred
     }
 
+    /**
+     * 等待某筆已登記請求的答案。找不到（已被取消／已交付）時直接回 null，
+     * 讓呼叫端當作沒回應處理，不會卡住。
+     */
+    suspend fun awaitReply(requestId: Long): String? = pending[requestId]?.await()
+
     /** Activity 交回結果：完成對應的 deferred 並移除登記（重複呼叫安全，第二次為 no-op） */
     fun deliver(requestId: Long, value: String?) {
         pending.remove(requestId)?.complete(value)

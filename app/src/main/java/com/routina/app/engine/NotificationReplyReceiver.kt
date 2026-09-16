@@ -9,10 +9,6 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
 import com.routina.app.R
 import com.routina.app.RoutinaApp
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 
 /**
  * 接住通知上的直接回覆，把內容交回正在等待的例行程序。
@@ -38,23 +34,6 @@ class NotificationReplyReceiver : BroadcastReceiver() {
         // 空白回覆當作沒回答，交 null 讓動作記為失敗，不要把空字串存進變數
         InputBridge.deliver(requestId, reply.ifBlank { null })
 
-        // 不等待型的通知（顯示通知＋可回覆）：主流程早就跑完，這裡把「收到回覆時」區塊補跑。
-        // 用 goAsync 讓系統知道還沒處理完，行程不會在動作跑到一半被收掉。
-        if (reply.isNotBlank()) {
-            val pending = PendingReplies.take(context, requestId)
-            if (pending != null) {
-                val appContext = context.applicationContext
-                val result = goAsync()
-                scope.launch {
-                    try {
-                        RoutineExecutor.runReplyBody(appContext, pending, reply)
-                    } finally {
-                        result.finish()
-                    }
-                }
-            }
-        }
-
         val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
         if (notificationId >= 0) {
             dismiss(context, notificationId)
@@ -79,13 +58,6 @@ class NotificationReplyReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        /**
-         * 補跑回覆區塊用的 scope：刻意不綁任何元件生命週期。
-         * 廣播接收器的 onReceive 一回傳就結束，掛在它身上的協程會被取消
-         * （與 [RunFromOutside] 同樣的理由）。
-         */
-        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
         const val KEY_REPLY = "routina_reply"
         private const val EXTRA_REQUEST_ID = "request_id"
         private const val EXTRA_NOTIFICATION_ID = "notification_id"

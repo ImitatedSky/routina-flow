@@ -172,11 +172,21 @@ fun ActionEditDialog(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
+                        Spacer(Modifier.height(12.dp))
+                        NumericVarField(
+                            label = "最多等幾秒",
+                            expr = current.replyWaitExpr,
+                            fallback = current.replyWaitSeconds,
+                            unit = " 秒",
+                            range = Action.REPLY_WAIT_SAFE,
+                            tokenGroups = tokenGroups,
+                            onExprChange = { draft = current.copy(replyWaitExpr = it) }
+                        )
                         Spacer(Modifier.height(8.dp))
                         Text(
                             "通知會帶一個輸入框，你打的字存進這個變數。" +
-                                "流程不會等——通知發出後就繼續往下跑。" +
-                                "想在回覆進來時做事，就在這個動作後面接一塊「收到回覆時」。",
+                                "在這個動作後面接一塊「收到回覆時」，就能分成「有回覆」與" +
+                                "「等到時間到還是沒回」兩種情況各做各的事。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1368,6 +1378,11 @@ fun ActionEditDialog(
                         "回覆的內容在通知那個動作設定的變數裡。"
                 )
 
+                is Action.NoReply -> ControlMarkerInfo(
+                    "「收到回覆時」的例外分支：等待時間到了還是沒人回覆才走這一段。" +
+                        "兩段只會執行其中一段。"
+                )
+
                 is Action.EndOnReply -> ControlMarkerInfo("「收到回覆時」區塊的結尾。")
 
                 is Action.RunRoutine -> Column {
@@ -2009,7 +2024,7 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
     is Action.EndRepeat, is Action.EndForEach,
-    is Action.OnReplyBegin, is Action.EndOnReply -> true
+    is Action.OnReplyBegin, is Action.NoReply, is Action.EndOnReply -> true
     // 執行程序必須選定一個目標程序
     is Action.RunRoutine -> action.routineId.isNotBlank()
 }

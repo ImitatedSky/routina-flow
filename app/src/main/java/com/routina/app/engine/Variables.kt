@@ -27,7 +27,22 @@ class RunContext {
 
     /** 目前正在執行中的程序 id 堆疊（含最外層）；「執行程序」動作據此擋循環呼叫 */
     val callStack = mutableSetOf<String>()
+
+    /**
+     * 前一個「可回覆的通知」留下的待回覆資訊，供緊接著的「收到回覆時」區塊取用。
+     * 兩者位置相鄰但是分開的動作，用這裡交棒比讓積木互相知道彼此乾淨。
+     * null＝前面沒有在等回覆的通知。
+     */
+    var pendingReply: PendingReplyHandle? = null
 }
+
+/** 一則正在等回覆的通知：等待用的請求 id、要存進哪個變數、等多久、通知本身的 id */
+class PendingReplyHandle(
+    val requestId: Long,
+    val variableName: String,
+    val waitMs: Long,
+    val notificationId: Int
+)
 
 /**
  * 文字參數的變數解析器。

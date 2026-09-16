@@ -322,13 +322,51 @@ object RoutineExecutor {
                     i++
                 }
 
-                // 回覆區塊不在主流程跑：整段跳過，等回覆進來才由 NotificationReplyReceiver 補跑
-                is Action.OnReplyBegin -> i = matchingEnd(actions, i, to) + 1
+                // 收到回覆時：在這裡等前一個可回覆通知的答覆（有上限），
+                // 有回來就跑第一段、時間到沒回就跑「沒有回覆時」那段，兩段只會執行其中一段。
+                is Action.OnReplyBegin -> {
+                    val end = matchingEnd(actions, i, to)
+                    val elseAt = nextBranchOrEnd(actions, i, end)
+                    val handle = ctx.pendingReply
+                    ctx.pendingReply = null
+
+                    val answer = if (handle == null) {
+                        // 前面沒有可回覆的通知＝這個區塊接錯位置，記一筆再當作沒回覆
+                        results.add(
+                            ActionResult("收到回覆時：前面沒有可回覆的通知", false, "no pending reply")
+                        )
+                        null
+                    } else {
+                        try {
+                            withTimeoutOrNull(handle.waitMs) {
+                                InputBridge.awaitReply(handle.requestId)
+                            }
+                        } finally {
+                            // 等完就收掉登記與那則通知，不留一個沒人在等的輸入框
+                            InputBridge.cancel(handle.requestId)
+                            NotificationManagerCompat.from(context).cancel(handle.notificationId)
+                        }
+                    }
+
+                    if (answer != null) {
+                        handle?.variableName?.takeIf { it.isNotBlank() }?.let { ctx.vars[it] = answer }
+                        runProgram(
+                            actions, i + 1, elseAt, context, routine, source, canLaunchActivity,
+                            allowWait, fgsSwitch, ctx, results, budget
+                        )
+                    } else if (elseAt < end) {
+                        runProgram(
+                            actions, elseAt + 1, end, context, routine, source, canLaunchActivity,
+                            allowWait, fgsSwitch, ctx, results, budget
+                        )
+                    }
+                    i = end + 1
+                }
 
                 // 直接走到的孤立標記（正常流程下配對跳轉不會停在這）→ 略過
                 is Action.ElseIf, is Action.Else, is Action.EndIf,
                 is Action.EndWhile, is Action.EndRepeat, is Action.EndForEach,
-                is Action.EndOnReply -> i++
+                is Action.NoReply, is Action.EndOnReply -> i++
 
                 else -> {
                     budget[0]--
@@ -412,7 +450,8 @@ object RoutineExecutor {
                 is Action.EndForEach, is Action.EndOnReply ->
                     if (depth == 0) return j else depth--
 
-                is Action.ElseIf, is Action.Else -> if (depth == 0) return j
+                is Action.ElseIf, is Action.Else, is Action.NoReply ->
+                    if (depth == 0) return j
                 else -> {}
             }
             j++
@@ -560,7 +599,7 @@ object RoutineExecutor {
                 is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
                 is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
                 is Action.EndRepeat, is Action.ForEachBegin, is Action.EndForEach,
-                is Action.OnReplyBegin, is Action.EndOnReply,
+                is Action.OnReplyBegin, is Action.NoReply, is Action.EndOnReply,
                 is Action.RunRoutine -> null
             }
             ActionResult(if (note == null) description else "$description（$note）", true)
@@ -671,7 +710,7 @@ object RoutineExecutor {
         }
         val id = notificationId(routine.id, index)
         if (action.askReply && action.variableName.isNotBlank()) {
-            return postReplyNotification(context, routine, index, action, ctx, id)
+            return postReplyNotification(context, action, ctx, id)
         }
         val notification = NotificationCompat.Builder(context, RoutinaApp.CHANNEL_ACTIONS)
             .setSmallIcon(R.drawable.ic_notification)
@@ -689,42 +728,29 @@ object RoutineExecutor {
 
 
     /**
-     * 發一則帶輸入框的通知，然後**立刻回來**——流程不會在這裡停。
+     * 發一則帶輸入框的通知，並把「正在等誰回覆」記進 [RunContext]。
      *
-     * 若這個動作後面緊接著 [Action.OnReplyBegin]，就把那一段的範圍連同當下的變數快照
-     * 記進 [PendingReplies]；使用者回覆時由 [NotificationReplyReceiver] 讀回來補跑。
-     * 落地成檔案是必要的：主流程早就結束，回覆進來時 App 行程很可能已經被系統回收。
+     * 這裡不等待——等多久、回覆了要走哪一段，都由緊接著的「收到回覆時」區塊決定。
+     * 把發通知和等回覆拆開，兩個積木各自單純，也讓沒有接區塊時只是單純發一則可回覆通知。
      */
     private fun postReplyNotification(
         context: Context,
-        routine: Routine,
-        index: Int,
         action: Action.Notify,
         ctx: RunContext,
         notificationId: Int
     ): String {
         val name = action.variableName.trim()
         val requestId = InputBridge.nextRequestId()
-
-        // 緊接在後面的「收到回覆時」區塊＝回覆要跑的內容；沒有就只是發一則可回覆的通知
-        val beginAt = index + 1
-        val hasBody = routine.actions.getOrNull(beginAt) is Action.OnReplyBegin
-        if (hasBody) {
-            val endAt = matchingEnd(routine.actions, beginAt, routine.actions.size)
-            PendingReplies.put(
-                context,
-                PendingReply(
-                    requestId = requestId,
-                    routineId = routine.id,
-                    bodyStart = beginAt + 1,
-                    bodyEnd = endAt,
-                    variableName = name,
-                    notificationId = notificationId,
-                    vars = ctx.vars.toMap(),
-                    trigger = ctx.trigger.toMap()
-                )
-            )
-        }
+        InputBridge.open(requestId)
+        val seconds = resolveNum(
+            action.replyWaitExpr, action.replyWaitSeconds, Action.REPLY_WAIT_SAFE, ctx
+        )
+        ctx.pendingReply = PendingReplyHandle(
+            requestId = requestId,
+            variableName = name,
+            waitMs = seconds * 1000L,
+            notificationId = notificationId
+        )
 
         val label = action.replyLabel.ifBlank { "回覆" }
         val remoteInput = RemoteInput.Builder(NotificationReplyReceiver.KEY_REPLY)
@@ -751,58 +777,7 @@ object RoutineExecutor {
                 .setContentIntent(openAppPendingIntent(context, notificationId))
                 .build()
         )
-        return if (hasBody) "已發出，回覆後才執行下面的區塊" else "已發出，等待回覆存進 $name"
-    }
-
-    /**
-     * 補跑「收到回覆時」區塊：由 [NotificationReplyReceiver] 在回覆進來時呼叫。
-     *
-     * 以通知發出當下的變數／觸發快照重建情境，再把回覆本身放進具名變數，
-     * 讓區塊裡看到的東西與當時一致。來源記為 MANUAL——這段是使用者親手回覆觸發的，
-     * 而且不該重複計入原本那次觸發的次數。
-     */
-    suspend fun runReplyBody(context: Context, pending: PendingReply, reply: String): RunLog? {
-        val appContext = context.applicationContext
-        val repository = RoutineRepository.get(appContext)
-        val routine = repository.findById(pending.routineId) ?: return null
-
-        // 廣播當下系統還卡在「已回覆」的過渡狀態，那時的取消常常不生效；
-        // 這裡時間點較晚，再收一次才收得掉
-        if (pending.notificationId >= 0) {
-            NotificationManagerCompat.from(appContext).cancel(pending.notificationId)
-        }
-
-        val ctx = RunContext().apply {
-            trigger.putAll(pending.trigger)
-            vars.putAll(pending.vars)
-            vars[pending.variableName] = reply
-            globals.putAll(repository.globalsSnapshot())
-            callStack.add(routine.id)
-        }
-        val results = mutableListOf<ActionResult>()
-        runProgram(
-            actions = routine.actions,
-            from = pending.bodyStart.coerceIn(0, routine.actions.size),
-            to = pending.bodyEnd.coerceIn(0, routine.actions.size),
-            context = appContext,
-            routine = routine,
-            source = TriggerSource.MANUAL,
-            canLaunchActivity = false,
-            allowWait = true,
-            fgsSwitch = null,
-            ctx = ctx,
-            results = results,
-            budget = intArrayOf(Action.MAX_ACTIONS_PER_RUN)
-        )
-        val log = RunLog(
-            routineId = routine.id,
-            routineName = routine.name,
-            source = TriggerSource.MANUAL,
-            results = results,
-            note = "通知回覆「$reply」"
-        )
-        repository.addLog(log)
-        return log
+        return "已發出，最多等 $seconds 秒"
     }
 
     private fun doOpenApp(
@@ -2383,6 +2358,7 @@ object RoutineExecutor {
         is Action.Else -> "否則"
         is Action.EndIf -> "結束如果"
         is Action.OnReplyBegin -> "收到回覆時"
+        is Action.NoReply -> "沒有回覆時"
         is Action.EndOnReply -> "結束收到回覆"
         is Action.WhileBegin -> "一直重複…當 ${describeCondition(action.condition)}"
         is Action.EndWhile -> "結束重複"

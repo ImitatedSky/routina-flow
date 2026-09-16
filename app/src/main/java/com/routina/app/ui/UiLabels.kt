@@ -171,6 +171,7 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.Else -> "否則"
     is Action.EndIf -> "結束如果"
     is Action.OnReplyBegin -> "收到回覆時"
+    is Action.NoReply -> "沒有回覆時"
     is Action.EndOnReply -> "結束"
     is Action.WhileBegin -> "一直重複…當"
     is Action.EndWhile -> "結束重複"
@@ -233,6 +234,7 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.Else -> "否則"
     is Action.EndIf -> "結束如果"
     is Action.OnReplyBegin -> "收到回覆時"
+    is Action.NoReply -> "沒有回覆時"
     is Action.EndOnReply -> "結束收到回覆"
     is Action.WhileBegin -> "當"
     is Action.EndWhile -> "結束重複"
@@ -341,7 +343,7 @@ fun actionParamText(action: Action): String = when (action) {
     }
     is Action.Else -> "其餘情況"
     is Action.EndIf, is Action.EndWhile, is Action.EndRepeat, is Action.EndForEach,
-    is Action.OnReplyBegin, is Action.EndOnReply -> ""
+    is Action.OnReplyBegin, is Action.NoReply, is Action.EndOnReply -> ""
     is Action.RunRoutine -> action.routineName.ifBlank { "選擇程序" }
 }
 

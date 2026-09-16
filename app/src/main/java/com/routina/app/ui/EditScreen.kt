@@ -1063,7 +1063,7 @@ private fun indentDepths(actions: List<Action>): List<Int> {
                 depth
             }
 
-            is Action.ElseIf, is Action.Else -> (depth - 1).coerceAtLeast(0)
+            is Action.ElseIf, is Action.Else, is Action.NoReply -> (depth - 1).coerceAtLeast(0)
             else -> depth
         }
     }

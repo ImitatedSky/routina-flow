@@ -180,6 +180,7 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
             Action.RepeatBegin(),
             Action.ForEachBegin(),
             Action.OnReplyBegin,
+            Action.NoReply,
             Action.RunRoutine()
         )
     )
