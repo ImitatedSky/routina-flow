@@ -422,12 +422,21 @@ fun Trigger.withGeoCircle(circle: GeoCircle): Trigger = when (this) {
 @Serializable
 sealed class Action {
 
-    /** 顯示通知 */
+    /**
+     * 顯示通知。
+     *
+     * [askReply] 開啟時通知會帶一個輸入框，使用者打的字存進 [variableName]。
+     * **不會等**——通知發出後流程立刻往下跑；回覆進來時才執行緊接在後面的
+     * [OnReplyBegin] 區塊（沒有那個區塊就只是把回覆記起來）。
+     */
     @Serializable
     @SerialName("notify")
     data class Notify(
         val title: String = "",
-        val message: String = ""
+        val message: String = "",
+        val askReply: Boolean = false,
+        val variableName: String = "",
+        val replyLabel: String = "回覆"
     ) : Action()
 
     /** 開啟指定 App */
@@ -831,6 +840,22 @@ sealed class Action {
         val variableName: String = "",
         val defaultValue: String = ""
     ) : Action()
+
+    /**
+     * 收到回覆時：緊接在可回覆的 [Notify] 之後，框住「使用者回覆了才要做的事」。
+     *
+     * 主流程執行到這裡會整段跳過、繼續往下；等回覆真的進來才單獨執行這一段，
+     * 因此通知不會把流程卡住。與其他流程控制標記一樣成對出現（[EndOnReply]），
+     * 縮排也由同一套機制處理。
+     */
+    @Serializable
+    @SerialName("on_reply_begin")
+    data object OnReplyBegin : Action()
+
+    /** [OnReplyBegin] 的結束標記 */
+    @Serializable
+    @SerialName("end_on_reply")
+    data object EndOnReply : Action()
 
     /**
      * 通知詢問：發一則可直接回覆的通知並暫停，使用者在通知上打的字存進具名變數

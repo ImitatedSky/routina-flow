@@ -152,7 +152,6 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
             Action.SetGlobalVariable(),
             Action.AskInput(),
             Action.ChooseMenu(),
-            Action.NotifyAsk(),
             Action.JsonGet(),
             Action.TextTransform(),
             Action.DateFormat()
@@ -169,7 +168,8 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
             Action.ListCount()
         )
     ),
-    // 「結束」標記不列在調色盤：加入開始標記時由編輯畫面成對插入（見 EditScreen 的 pairedEnd）
+    // 「結束」標記不列在調色盤：加入開始標記時由編輯畫面成對插入（見 EditScreen 的 pairedEnd）。
+    // 「通知詢問」已被「顯示通知＋可回覆」取代（後者不擋流程），舊資料仍可執行，只是不再從這裡新增。
     PaletteGroup(
         "流程控制",
         listOf(
@@ -179,6 +179,7 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
             Action.WhileBegin(),
             Action.RepeatBegin(),
             Action.ForEachBegin(),
+            Action.OnReplyBegin,
             Action.RunRoutine()
         )
     )

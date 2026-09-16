@@ -200,7 +200,8 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
     is Action.EndRepeat, is Action.ForEachBegin,
-    is Action.EndForEach -> RoutinaColors.ActionControl
+    is Action.EndForEach, is Action.OnReplyBegin,
+    is Action.EndOnReply -> RoutinaColors.ActionControl
     is Action.RunRoutine -> RoutinaColors.ActionRunRoutine
 }
 

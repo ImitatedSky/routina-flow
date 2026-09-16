@@ -322,9 +322,13 @@ object RoutineExecutor {
                     i++
                 }
 
+                // 回覆區塊不在主流程跑：整段跳過，等回覆進來才由 NotificationReplyReceiver 補跑
+                is Action.OnReplyBegin -> i = matchingEnd(actions, i, to) + 1
+
                 // 直接走到的孤立標記（正常流程下配對跳轉不會停在這）→ 略過
                 is Action.ElseIf, is Action.Else, is Action.EndIf,
-                is Action.EndWhile, is Action.EndRepeat, is Action.EndForEach -> i++
+                is Action.EndWhile, is Action.EndRepeat, is Action.EndForEach,
+                is Action.EndOnReply -> i++
 
                 else -> {
                     budget[0]--
@@ -382,10 +386,11 @@ object RoutineExecutor {
         while (j < to) {
             when (actions[j]) {
                 is Action.IfBegin, is Action.WhileBegin, is Action.RepeatBegin,
-                is Action.ForEachBegin -> depth++
+                is Action.ForEachBegin, is Action.OnReplyBegin -> depth++
 
                 is Action.EndIf, is Action.EndWhile, is Action.EndRepeat,
-                is Action.EndForEach -> if (depth == 0) return j else depth--
+                is Action.EndForEach, is Action.EndOnReply ->
+                    if (depth == 0) return j else depth--
 
                 else -> {}
             }
@@ -401,10 +406,11 @@ object RoutineExecutor {
         while (j < to) {
             when (actions[j]) {
                 is Action.IfBegin, is Action.WhileBegin, is Action.RepeatBegin,
-                is Action.ForEachBegin -> depth++
+                is Action.ForEachBegin, is Action.OnReplyBegin -> depth++
 
                 is Action.EndIf, is Action.EndWhile, is Action.EndRepeat,
-                is Action.EndForEach -> if (depth == 0) return j else depth--
+                is Action.EndForEach, is Action.EndOnReply ->
+                    if (depth == 0) return j else depth--
 
                 is Action.ElseIf, is Action.Else -> if (depth == 0) return j
                 else -> {}
@@ -502,7 +508,7 @@ object RoutineExecutor {
         val description = describe(context, resolved)
         return try {
             val note = when (resolved) {
-                is Action.Notify -> doNotify(context, routine, index, resolved)
+                is Action.Notify -> doNotify(context, routine, index, resolved, ctx)
                 is Action.OpenApp -> doOpenApp(context, routine, index, resolved, canLaunchActivity)
                 is Action.OpenUrl -> doOpenUrl(context, routine, index, resolved, canLaunchActivity)
                 is Action.Share -> doShare(context, routine, index, resolved, canLaunchActivity)
@@ -554,6 +560,7 @@ object RoutineExecutor {
                 is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
                 is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
                 is Action.EndRepeat, is Action.ForEachBegin, is Action.EndForEach,
+                is Action.OnReplyBegin, is Action.EndOnReply,
                 is Action.RunRoutine -> null
             }
             ActionResult(if (note == null) description else "$description（$note）", true)
@@ -655,13 +662,17 @@ object RoutineExecutor {
         context: Context,
         routine: Routine,
         index: Int,
-        action: Action.Notify
+        action: Action.Notify,
+        ctx: RunContext
     ): String? {
         val manager = NotificationManagerCompat.from(context)
         if (!manager.areNotificationsEnabled()) {
             error("未授權通知權限，無法顯示通知")
         }
         val id = notificationId(routine.id, index)
+        if (action.askReply && action.variableName.isNotBlank()) {
+            return postReplyNotification(context, routine, index, action, ctx, id)
+        }
         val notification = NotificationCompat.Builder(context, RoutinaApp.CHANNEL_ACTIONS)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(action.title.ifBlank { "Routina" })
@@ -674,6 +685,124 @@ object RoutineExecutor {
             .build()
         manager.notify(id, notification)
         return null
+    }
+
+
+    /**
+     * 發一則帶輸入框的通知，然後**立刻回來**——流程不會在這裡停。
+     *
+     * 若這個動作後面緊接著 [Action.OnReplyBegin]，就把那一段的範圍連同當下的變數快照
+     * 記進 [PendingReplies]；使用者回覆時由 [NotificationReplyReceiver] 讀回來補跑。
+     * 落地成檔案是必要的：主流程早就結束，回覆進來時 App 行程很可能已經被系統回收。
+     */
+    private fun postReplyNotification(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.Notify,
+        ctx: RunContext,
+        notificationId: Int
+    ): String {
+        val name = action.variableName.trim()
+        val requestId = InputBridge.nextRequestId()
+
+        // 緊接在後面的「收到回覆時」區塊＝回覆要跑的內容；沒有就只是發一則可回覆的通知
+        val beginAt = index + 1
+        val hasBody = routine.actions.getOrNull(beginAt) is Action.OnReplyBegin
+        if (hasBody) {
+            val endAt = matchingEnd(routine.actions, beginAt, routine.actions.size)
+            PendingReplies.put(
+                context,
+                PendingReply(
+                    requestId = requestId,
+                    routineId = routine.id,
+                    bodyStart = beginAt + 1,
+                    bodyEnd = endAt,
+                    variableName = name,
+                    notificationId = notificationId,
+                    vars = ctx.vars.toMap(),
+                    trigger = ctx.trigger.toMap()
+                )
+            )
+        }
+
+        val label = action.replyLabel.ifBlank { "回覆" }
+        val remoteInput = RemoteInput.Builder(NotificationReplyReceiver.KEY_REPLY)
+            .setLabel(label)
+            .build()
+        val replyAction = NotificationCompat.Action.Builder(
+            R.drawable.ic_notification,
+            label,
+            NotificationReplyReceiver.replyPendingIntent(context, requestId, notificationId)
+        )
+            .addRemoteInput(remoteInput)
+            .setAllowGeneratedReplies(false)
+            .build()
+
+        NotificationManagerCompat.from(context).notify(
+            notificationId,
+            NotificationCompat.Builder(context, RoutinaApp.CHANNEL_ACTIONS)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(action.title.ifBlank { "Routina" })
+                .setContentText(action.message)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(action.message))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .addAction(replyAction)
+                .setContentIntent(openAppPendingIntent(context, notificationId))
+                .build()
+        )
+        return if (hasBody) "已發出，回覆後才執行下面的區塊" else "已發出，等待回覆存進 $name"
+    }
+
+    /**
+     * 補跑「收到回覆時」區塊：由 [NotificationReplyReceiver] 在回覆進來時呼叫。
+     *
+     * 以通知發出當下的變數／觸發快照重建情境，再把回覆本身放進具名變數，
+     * 讓區塊裡看到的東西與當時一致。來源記為 MANUAL——這段是使用者親手回覆觸發的，
+     * 而且不該重複計入原本那次觸發的次數。
+     */
+    suspend fun runReplyBody(context: Context, pending: PendingReply, reply: String): RunLog? {
+        val appContext = context.applicationContext
+        val repository = RoutineRepository.get(appContext)
+        val routine = repository.findById(pending.routineId) ?: return null
+
+        // 廣播當下系統還卡在「已回覆」的過渡狀態，那時的取消常常不生效；
+        // 這裡時間點較晚，再收一次才收得掉
+        if (pending.notificationId >= 0) {
+            NotificationManagerCompat.from(appContext).cancel(pending.notificationId)
+        }
+
+        val ctx = RunContext().apply {
+            trigger.putAll(pending.trigger)
+            vars.putAll(pending.vars)
+            vars[pending.variableName] = reply
+            globals.putAll(repository.globalsSnapshot())
+            callStack.add(routine.id)
+        }
+        val results = mutableListOf<ActionResult>()
+        runProgram(
+            actions = routine.actions,
+            from = pending.bodyStart.coerceIn(0, routine.actions.size),
+            to = pending.bodyEnd.coerceIn(0, routine.actions.size),
+            context = appContext,
+            routine = routine,
+            source = TriggerSource.MANUAL,
+            canLaunchActivity = false,
+            allowWait = true,
+            fgsSwitch = null,
+            ctx = ctx,
+            results = results,
+            budget = intArrayOf(Action.MAX_ACTIONS_PER_RUN)
+        )
+        val log = RunLog(
+            routineId = routine.id,
+            routineName = routine.name,
+            source = TriggerSource.MANUAL,
+            results = results,
+            note = "通知回覆「$reply」"
+        )
+        repository.addLog(log)
+        return log
     }
 
     private fun doOpenApp(
@@ -2253,6 +2382,8 @@ object RoutineExecutor {
         is Action.ElseIf -> "否則如果 ${describeCondition(action.condition)}"
         is Action.Else -> "否則"
         is Action.EndIf -> "結束如果"
+        is Action.OnReplyBegin -> "收到回覆時"
+        is Action.EndOnReply -> "結束收到回覆"
         is Action.WhileBegin -> "一直重複…當 ${describeCondition(action.condition)}"
         is Action.EndWhile -> "結束重複"
         is Action.RepeatBegin -> "重複 ${numLabel(action.countExpr, action.count)} 次"

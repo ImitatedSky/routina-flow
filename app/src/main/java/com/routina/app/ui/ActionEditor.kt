@@ -142,6 +142,45 @@ fun ActionEditDialog(
                         label = "內容",
                         tokenGroups = tokenGroups
                     )
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("可以回覆", modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = current.askReply,
+                            onCheckedChange = { draft = current.copy(askReply = it) }
+                        )
+                    }
+                    if (current.askReply) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = current.variableName,
+                            onValueChange = { draft = current.copy(variableName = it) },
+                            label = { Text("回覆存到變數") },
+                            placeholder = { Text("例如：回覆") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = current.replyLabel,
+                            onValueChange = { draft = current.copy(replyLabel = it) },
+                            label = { Text("回覆按鈕文字") },
+                            placeholder = { Text("回覆") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "通知會帶一個輸入框，你打的字存進這個變數。" +
+                                "流程不會等——通知發出後就繼續往下跑。" +
+                                "想在回覆進來時做事，就在這個動作後面接一塊「收到回覆時」。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 is Action.OpenApp -> Column {
@@ -1323,6 +1362,14 @@ fun ActionEditDialog(
                 is Action.EndRepeat -> ControlMarkerInfo("「重複 N 次」區塊的結尾。")
                 is Action.EndForEach -> ControlMarkerInfo("「逐項重複」區塊的結尾。")
 
+                is Action.OnReplyBegin -> ControlMarkerInfo(
+                    "放在可回覆的「顯示通知」後面，框住「使用者回覆了才要做的事」。" +
+                        "主流程不會等它——通知發出後就繼續往下跑，回覆進來時才單獨執行這一段。" +
+                        "回覆的內容在通知那個動作設定的變數裡。"
+                )
+
+                is Action.EndOnReply -> ControlMarkerInfo("「收到回覆時」區塊的結尾。")
+
                 is Action.RunRoutine -> Column {
                     if (routineChoices.isEmpty()) {
                         Text(
@@ -1406,6 +1453,8 @@ fun availableTokens(
             if (eq > 0) expr.text.substring(0, eq).trim() else null
         }
         val askVarNames = precedingActions.filterIsInstance<Action.AskInput>().map { it.variableName.trim() }
+        val notifyVarNames = precedingActions.filterIsInstance<Action.Notify>()
+            .filter { it.askReply }.map { it.variableName.trim() }
         val replyVarNames =
             precedingActions.filterIsInstance<Action.NotifyAsk>().map { it.variableName.trim() }
         val menuVarNames = precedingActions.filterIsInstance<Action.ChooseMenu>().map { it.variableName.trim() }
@@ -1427,7 +1476,7 @@ fun availableTokens(
         val textVarNames = precedingActions.filterIsInstance<Action.TextTransform>().map { it.variableName.trim() }
         val dateVarNames = precedingActions.filterIsInstance<Action.DateFormat>().map { it.variableName.trim() }
         val locVarNames = precedingActions.filterIsInstance<Action.GetLocation>().map { it.variableName.trim() }
-        val varNames = (setVarNames + calcVarNames + exprVarNames + askVarNames + menuVarNames + replyVarNames +
+        val varNames = (setVarNames + calcVarNames + exprVarNames + askVarNames + menuVarNames + replyVarNames + notifyVarNames +
             listVarNames + forEachItemNames + jsonVarNames + textVarNames + dateVarNames + locVarNames)
             .filter { it.isNotBlank() }
             .distinct()
@@ -1902,7 +1951,9 @@ private fun <T> ChipRow(
 }
 
 private fun isActionValid(action: Action): Boolean = when (action) {
-    is Action.Notify -> action.title.isNotBlank() || action.message.isNotBlank()
+    is Action.Notify ->
+        (action.title.isNotBlank() || action.message.isNotBlank()) &&
+            (!action.askReply || action.variableName.isNotBlank())
     is Action.OpenApp -> action.packageName.isNotBlank()
     is Action.OpenUrl -> action.url.isNotBlank()
     is Action.Share -> action.text.isNotBlank()
@@ -1957,7 +2008,8 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.ForEachBegin -> action.itemVariable.isNotBlank()
     is Action.IfBegin, is Action.ElseIf, is Action.Else, is Action.EndIf,
     is Action.WhileBegin, is Action.EndWhile, is Action.RepeatBegin,
-    is Action.EndRepeat, is Action.EndForEach -> true
+    is Action.EndRepeat, is Action.EndForEach,
+    is Action.OnReplyBegin, is Action.EndOnReply -> true
     // 執行程序必須選定一個目標程序
     is Action.RunRoutine -> action.routineId.isNotBlank()
 }

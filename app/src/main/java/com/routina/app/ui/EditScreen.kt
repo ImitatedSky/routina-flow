@@ -1023,6 +1023,7 @@ private fun pairedEnd(action: Action): Action? = when (action) {
     is Action.WhileBegin -> Action.EndWhile
     is Action.RepeatBegin -> Action.EndRepeat
     is Action.ForEachBegin -> Action.EndForEach
+    is Action.OnReplyBegin -> Action.EndOnReply
     else -> null
 }
 
@@ -1035,10 +1036,11 @@ private fun matchingEndInList(actions: List<Action>, index: Int): Int? {
     while (j < actions.size) {
         when (actions[j]) {
             is Action.IfBegin, is Action.WhileBegin, is Action.RepeatBegin,
-            is Action.ForEachBegin -> depth++
+            is Action.ForEachBegin, is Action.OnReplyBegin -> depth++
 
             is Action.EndIf, is Action.EndWhile, is Action.EndRepeat,
-            is Action.EndForEach -> if (depth == 0) return j else depth--
+            is Action.EndForEach, is Action.EndOnReply ->
+                if (depth == 0) return j else depth--
 
             else -> {}
         }
@@ -1053,10 +1055,10 @@ private fun indentDepths(actions: List<Action>): List<Int> {
     return actions.map { a ->
         when (a) {
             is Action.IfBegin, is Action.WhileBegin, is Action.RepeatBegin,
-            is Action.ForEachBegin -> depth++
+            is Action.ForEachBegin, is Action.OnReplyBegin -> depth++
 
             is Action.EndIf, is Action.EndWhile, is Action.EndRepeat,
-            is Action.EndForEach -> {
+            is Action.EndForEach, is Action.EndOnReply -> {
                 depth = (depth - 1).coerceAtLeast(0)
                 depth
             }
