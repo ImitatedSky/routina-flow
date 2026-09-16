@@ -676,6 +676,9 @@ fun InsertPoint(
     modifier: Modifier = Modifier
 ) {
     val tint = MaterialTheme.colorScheme.primary
+    // 只留插入鈕，不畫連接線：原本兩條全寬細線在每個接縫都出現，
+    // 等於一條反覆出現的分隔線，把整串積木切成等距片段，
+    // 和「這幾塊是一組」的訊息直接對抗。間隙本身已經指出插入位置。
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -683,36 +686,25 @@ fun InsertPoint(
             .clip(RoundedCornerShape(50))
             .clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.Center
     ) {
-        InsertLine(tint, Modifier.weight(1f))
         Box(
             modifier = Modifier
                 .size(20.dp)
                 .clip(CircleShape)
-                .background(tint.copy(alpha = 0.15f)),
+                .background(tint.copy(alpha = 0.10f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Filled.Add,
                 contentDescription = "在此插入動作",
-                tint = tint.copy(alpha = 0.8f),
+                tint = tint.copy(alpha = 0.55f),
                 modifier = Modifier.size(14.dp)
             )
         }
-        InsertLine(tint, Modifier.weight(1f))
     }
 }
 
-@Composable
-private fun InsertLine(tint: Color, modifier: Modifier) {
-    Box(
-        modifier = modifier
-            .height(1.5.dp)
-            .clip(RoundedCornerShape(50))
-            .background(tint.copy(alpha = 0.25f))
-    )
-}
 
 /** 清單預覽超出顯示上限時的灰積木 */
 @Composable
