@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Routina Flow 對家族開放的能力。格式定義見 FamilyLink.kt（契約 v1）。
+  屬性刻意不帶 android: 命名空間（與 file_paths.xml 同樣作法）。
+-->
+<capabilities contract="1">
+    <capability
+        id="run_routine"
+        label="執行例行程序"
+        summary="執行指定的例行程序（等同按下它的 ▶）">
+        <param
+            name="routine_id"
+            label="例行程序 ID"
+            type="text"
+            required="true" />
+    </capability>
+</capabilities>

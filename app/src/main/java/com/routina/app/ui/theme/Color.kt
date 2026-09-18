@@ -204,6 +204,8 @@ fun actionColor(action: Action): Color = when (action) {
     is Action.EndForEach, is Action.OnReplyBegin, is Action.NoReply,
     is Action.EndOnReply -> RoutinaColors.ActionControl
     is Action.RunRoutine -> RoutinaColors.ActionRunRoutine
+    // 呼叫家族 App 與「執行程序」同一回事：都是叫別的東西來做，歸同一組色
+    is Action.RunHubApp -> RoutinaColors.ActionRunRoutine
 }
 
 /** 方塊主色：優先用使用者自訂的 [Routine.color]，否則用觸發家族色 */

@@ -549,6 +549,8 @@ object RoutineExecutor {
             val note = when (resolved) {
                 is Action.Notify -> doNotify(context, routine, index, resolved, ctx)
                 is Action.OpenApp -> doOpenApp(context, routine, index, resolved, canLaunchActivity)
+                is Action.RunHubApp ->
+                    doRunHubApp(context, routine, index, resolved, canLaunchActivity)
                 is Action.OpenUrl -> doOpenUrl(context, routine, index, resolved, canLaunchActivity)
                 is Action.Share -> doShare(context, routine, index, resolved, canLaunchActivity)
                 is Action.MediaVolume -> doMediaVolume(context, resolved, ctx)
@@ -681,6 +683,11 @@ object RoutineExecutor {
             options = action.options.map { VariableResolver.resolve(it, ctx) }
         )
 
+        // 家族呼叫：只解析參數的值；套件名與能力 id 是識別碼、不解析（同 SetVariable.name）
+        is Action.RunHubApp -> action.copy(
+            params = action.params.mapValues { (_, value) -> VariableResolver.resolve(value, ctx) }
+        )
+
         else -> action
     }
 
@@ -793,6 +800,48 @@ object RoutineExecutor {
             ?: error("找不到 App：$label")
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return launchOrNotify(context, routine, index, intent, "開啟 $label", canLaunchActivity)
+    }
+
+    /**
+     * 請家族裡的另一個 App 執行它宣告的某個能力。
+     *
+     * 收件人是別的 App 的 Activity，所以與「開啟 App」同樣受背景啟動限制：
+     * 前景直接送出、背景改發可點擊通知（[launchOrNotify]）。
+     * 送出後不等回傳值 —— 跨 App 取回結果需要另一套機制，目前誠實地只做單向。
+     */
+    private fun doRunHubApp(
+        context: Context,
+        routine: Routine,
+        index: Int,
+        action: Action.RunHubApp,
+        canLaunchActivity: Boolean
+    ): String? {
+        require(action.packageName.isNotBlank()) { "未選擇家族 App" }
+        require(action.capabilityId.isNotBlank()) { "未選擇要執行的能力" }
+        val appLabel = action.appLabel.ifBlank { action.packageName }
+        val capabilityLabel = action.capabilityLabel.ifBlank { action.capabilityId }
+
+        val intent = FamilyLink.buildIntent(
+            packageName = action.packageName,
+            capabilityId = action.capabilityId,
+            params = action.params
+        )
+        // 對方沒安裝、或裝的版本已經不提供這個能力 → 先擋下來給明確原因，
+        // 而不是送出去靜靜失敗
+        @Suppress("DEPRECATION")
+        val accepted = runCatching {
+            context.packageManager.queryIntentActivities(intent, 0).isNotEmpty()
+        }.getOrDefault(false)
+        if (!accepted) error("$appLabel 沒有接收這個能力：$capabilityLabel")
+
+        return launchOrNotify(
+            context,
+            routine,
+            index,
+            intent,
+            "$appLabel：$capabilityLabel",
+            canLaunchActivity
+        )
     }
 
     private fun doOpenUrl(
@@ -2369,6 +2418,11 @@ object RoutineExecutor {
 
         is Action.EndForEach -> "結束逐項"
         is Action.RunRoutine -> "執行程序：${action.routineName.ifBlank { "(未選)" }}"
+        is Action.RunHubApp -> {
+            val app = action.appLabel.ifBlank { action.packageName.ifBlank { "(未選)" } }
+            val capability = action.capabilityLabel.ifBlank { action.capabilityId.ifBlank { "(未選)" } }
+            "家族 App：$app → $capability"
+        }
     }
 
     /** 變數／清單名稱的顯示（給紀錄用），沒填時標示未設定 */

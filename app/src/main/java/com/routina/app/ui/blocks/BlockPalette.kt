@@ -183,7 +183,8 @@ private val ACTION_GROUPS: List<PaletteGroup<Action>> = listOf(
             Action.ForEachBegin(),
             Action.OnReplyBegin,
             Action.NoReply,
-            Action.RunRoutine()
+            Action.RunRoutine(),
+            Action.RunHubApp()
         )
     )
 )

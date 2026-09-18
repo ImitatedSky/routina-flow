@@ -180,6 +180,7 @@ fun actionTypeName(action: Action): String = when (action) {
     is Action.ForEachBegin -> "逐項重複"
     is Action.EndForEach -> "結束逐項"
     is Action.RunRoutine -> "執行程序"
+    is Action.RunHubApp -> "執行家族 App"
 }
 
 /** 動作積木上的標籤文字（參數欄前的敘述） */
@@ -243,6 +244,7 @@ fun actionBlockLabel(action: Action): String = when (action) {
     is Action.ForEachBegin -> "逐項重複"
     is Action.EndForEach -> "結束逐項"
     is Action.RunRoutine -> "執行程序"
+    is Action.RunHubApp -> "家族 App"
 }
 
 /** 動作積木參數欄的內容 */
@@ -345,6 +347,8 @@ fun actionParamText(action: Action): String = when (action) {
     is Action.EndIf, is Action.EndWhile, is Action.EndRepeat, is Action.EndForEach,
     is Action.OnReplyBegin, is Action.NoReply, is Action.EndOnReply -> ""
     is Action.RunRoutine -> action.routineName.ifBlank { "選擇程序" }
+    is Action.RunHubApp ->
+        action.capabilityLabel.ifBlank { action.appLabel.ifBlank { "選擇能力" } }
 }
 
 /** 清單動作的參數欄：「變數 = 內容」，內容為空時只顯示變數名稱 */

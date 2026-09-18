@@ -126,6 +126,9 @@
         <meta-data
             android:name="com.routina.family.summary"
             android:value="日常自動化" />
+        <meta-data
+            android:name="com.routina.family.capabilities"
+            android:resource="@xml/family_capabilities" />
 
         <activity
             android:name=".MainActivity"
@@ -189,7 +192,17 @@
             android:exported="true"
             android:noHistory="true"
             android:taskAffinity=""
-            android:theme="@style/Theme.Routina.Invisible" />
+            android:theme="@style/Theme.Routina.Invisible">
+            <!--
+              家族成員呼叫「執行例行程序」能力的入口。桌面捷徑仍以顯式元件啟動、
+              不經過這個 filter。只收自家命名空間的 action，且要求能力 id 相符
+              （見 RunRoutineActivity.requestedRoutineId）。
+            -->
+            <intent-filter>
+                <action android:name="com.routina.family.action.RUN_CAPABILITY" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <!--
           互動動作（詢問輸入 / 選單選擇）的對話框入口：透明、對話框樣式的 Activity。

@@ -972,6 +972,26 @@ sealed class Action {
         val routineName: String = ""
     ) : Action()
 
+    /**
+     * 執行家族 App 的一個能力：把請求送給同家族的另一個 App（例如 Routina Hub），
+     * 由對方去做。能力與參數都由對方自己宣告，Flow 只負責送出（見 FamilyLink）。
+     *
+     * [packageName] 是收件人，[capabilityId] 是要執行哪個能力，兩者才是實際依據；
+     * [appLabel] 與 [capabilityLabel] 只作顯示用，對方改名了仍然叫得到。
+     * [params] 的值可以放變數 token，執行前會先代入。
+     *
+     * **不等回傳值**：送出即往下跑。跨 App 取回結果需要另一套機制，留待之後。
+     */
+    @Serializable
+    @SerialName("run_hub_app")
+    data class RunHubApp(
+        val packageName: String = "",
+        val appLabel: String = "",
+        val capabilityId: String = "",
+        val capabilityLabel: String = "",
+        val params: Map<String, String> = emptyMap()
+    ) : Action()
+
     companion object {
         const val METHOD_GET = "GET"
         const val METHOD_POST = "POST"

@@ -66,6 +66,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.routina.app.engine.ExpressionEval
+import com.routina.app.engine.FamilyLink
 import com.routina.app.engine.GeofenceManager
 import com.routina.app.engine.RoutineExecutor
 import com.routina.app.engine.RunContext
@@ -1423,6 +1424,125 @@ fun ActionEditDialog(
                         )
                     }
                 }
+
+                is Action.RunHubApp -> {
+                    val context = LocalContext.current
+                    // 只列有開放能力的成員：沒有能力的成員選了也沒事可做
+                    val members = remember { FamilyLink.callableMembers(context) }
+                    val selectedMember = members.firstOrNull { it.packageName == current.packageName }
+
+                    Column {
+                        if (members.isEmpty()) {
+                            Text(
+                                "找不到可呼叫的家族 App。成員要自己宣告開放的能力才會出現在這裡；" +
+                                    "裝上 Routina（Hub）之後回來再看。",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            var appMenu by remember { mutableStateOf(false) }
+                            Box {
+                                TextButton(onClick = { appMenu = true }) {
+                                    Text(selectedMember?.name ?: "選擇家族 App")
+                                    Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                                }
+                                DropdownMenu(
+                                    expanded = appMenu,
+                                    onDismissRequest = { appMenu = false }
+                                ) {
+                                    members.forEach { member ->
+                                        DropdownMenuItem(
+                                            text = { Text(member.name) },
+                                            onClick = {
+                                                // 換 App 就整個重來：舊能力與參數在新 App 上不存在
+                                                draft = Action.RunHubApp(
+                                                    packageName = member.packageName,
+                                                    appLabel = member.name
+                                                )
+                                                appMenu = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (selectedMember != null) {
+                                var capabilityMenu by remember { mutableStateOf(false) }
+                                val selectedCapability = selectedMember.capabilities
+                                    .firstOrNull { it.id == current.capabilityId }
+                                Box {
+                                    TextButton(onClick = { capabilityMenu = true }) {
+                                        Text(selectedCapability?.label ?: "選擇能力")
+                                        Icon(
+                                            Icons.Filled.ArrowDropDown,
+                                            contentDescription = null
+                                        )
+                                    }
+                                    DropdownMenu(
+                                        expanded = capabilityMenu,
+                                        onDismissRequest = { capabilityMenu = false }
+                                    ) {
+                                        selectedMember.capabilities.forEach { capability ->
+                                            DropdownMenuItem(
+                                                text = { Text(capability.label) },
+                                                onClick = {
+                                                    draft = current.copy(
+                                                        capabilityId = capability.id,
+                                                        capabilityLabel = capability.label,
+                                                        params = emptyMap()
+                                                    )
+                                                    capabilityMenu = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (selectedCapability != null) {
+                                    if (selectedCapability.summary.isNotBlank()) {
+                                        Text(
+                                            selectedCapability.summary,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    // 參數欄由對方宣告的清單長出來，值可以放變數 token
+                                    selectedCapability.params.forEach { param ->
+                                        Spacer(Modifier.height(8.dp))
+                                        VariableTextField(
+                                            value = current.params[param.name].orEmpty(),
+                                            onValueChange = {
+                                                draft = current.copy(
+                                                    params = current.params + (param.name to it)
+                                                )
+                                            },
+                                            label = if (param.required) {
+                                                "${param.label}（必填）"
+                                            } else {
+                                                param.label
+                                            },
+                                            tokenGroups = tokenGroups,
+                                            singleLine = true,
+                                            keyboardType = if (param.isNumber) {
+                                                KeyboardType.Number
+                                            } else {
+                                                KeyboardType.Text
+                                            }
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "送出後不等對方回覆，流程立刻往下跑。背景執行時若系統擋住啟動，" +
+                                        "會改發一則可點擊的通知。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -2027,6 +2147,8 @@ private fun isActionValid(action: Action): Boolean = when (action) {
     is Action.OnReplyBegin, is Action.NoReply, is Action.EndOnReply -> true
     // 執行程序必須選定一個目標程序
     is Action.RunRoutine -> action.routineId.isNotBlank()
+    // 呼叫家族 App 要有收件人與能力；必填參數由對方判斷（我們讀不到對方的規則）
+    is Action.RunHubApp -> action.packageName.isNotBlank() && action.capabilityId.isNotBlank()
 }
 
 /** 判斷式編輯器：左值 + 運算子 + 右值（為空／不為空時隱藏右值）。「如果」積木與程序的執行條件共用 */
