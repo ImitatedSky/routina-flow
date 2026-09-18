@@ -48,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.routina.app.data.AppSettings
 import com.routina.app.data.RoutineBackup
+import com.routina.app.data.BackupSettings
 import com.routina.app.data.RoutineBackupIo
 import com.routina.app.data.RoutineRepository
 import com.routina.app.data.ThemeMode
@@ -80,8 +81,20 @@ fun SettingsScreen(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        RoutineBackupIo.write(context, uri, routines).fold(
-            onSuccess = { notify("已匯出 $it 支例行程序") },
+        val repository = RoutineRepository.get(context)
+        RoutineBackupIo.write(
+            context = context,
+            uri = uri,
+            routines = routines,
+            nfcTags = repository.nfcTags.value,
+            globals = repository.globals.value,
+            settings = BackupSettings(
+                themeMode = AppSettings.themeMode,
+                runToast = AppSettings.runToast,
+                logLimit = AppSettings.logLimit
+            )
+        ).fold(
+            onSuccess = { notify(exportedSummary(it)) },
             onFailure = { notify(it.message ?: "匯出失敗") }
         )
     }
@@ -240,10 +253,10 @@ fun SettingsScreen(
         ImportPickerDialog(
             backup = backup,
             onDismiss = { pendingImport = null },
-            onConfirm = { picked ->
+            onConfirm = { picked, withExtras ->
                 pendingImport = null
-                applyImport(context, picked)
-                notify("已匯入 ${picked.size} 支例行程序")
+                applyImport(context, picked, backup.takeIf { withExtras })
+                notify(importedSummary(picked.size, backup.takeIf { withExtras }))
             }
         )
     }
@@ -392,3 +405,20 @@ private fun appVersion(context: android.content.Context): String = runCatching {
     val info = context.packageManager.getPackageInfo(context.packageName, 0)
     "Routina ${info.versionName}"
 }.getOrDefault("Routina")
+
+/** 匯出完成的回饋：把實際寫進去的東西講清楚，而不是只報例行程序的支數 */
+private fun exportedSummary(backup: RoutineBackup): String = buildList {
+    add("${backup.routines.size} 支例行程序")
+    if (backup.nfcTags.isNotEmpty()) add("NFC 標籤 ${backup.nfcTags.size}")
+    if (backup.globals.isNotEmpty()) add("全域變數 ${backup.globals.size}")
+    if (backup.settings != null) add("偏好設定")
+}.joinToString("、", prefix = "已匯出 ")
+
+private fun importedSummary(routineCount: Int, extras: RoutineBackup?): String = buildList {
+    if (routineCount > 0) add("$routineCount 支例行程序")
+    extras?.let {
+        if (it.nfcTags.isNotEmpty()) add("NFC 標籤 ${it.nfcTags.size}")
+        if (it.globals.isNotEmpty()) add("全域變數 ${it.globals.size}")
+        if (it.settings != null) add("偏好設定")
+    }
+}.joinToString("、", prefix = "已匯入 ")

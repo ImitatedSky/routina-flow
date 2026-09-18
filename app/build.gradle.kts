@@ -119,6 +119,10 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.5")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
+    // 備份格式的相容性用單元測試守著：舊備份讀不進來＝使用者的資料救不回來，
+    // 這種錯不該等到有人真的要還原時才發現
+    testImplementation("junit:junit:4.13.2")
+
     // 區域觸發：系統級地理圍欄 + 目前位置
     implementation("com.google.android.gms:play-services-location:21.3.0")
     // 地圖選點：OpenStreetMap 圖資，免 API key

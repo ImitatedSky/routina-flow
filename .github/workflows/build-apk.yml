@@ -46,6 +46,11 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
+      # 備份格式的相容性測試跑在這裡：舊備份讀不回來是使用者救不了的錯，
+      # 要在進 main 之前就擋下來
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+
       - name: Build (debug-signed fallback verifies compile)
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 
