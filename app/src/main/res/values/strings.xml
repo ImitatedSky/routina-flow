@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Routina</string>
+    <string name="app_name">Routina Flow</string>
 
     <!-- 桌面小工具 -->
     <string name="widget_empty">還沒有例行程序</string>

@@ -110,8 +110,8 @@
         <!--
           家族標記：讓 Routina（Hub）掃得到這支 App、列進家族目錄。
           純宣告，不影響任何現有功能，也不需要新權限。
-          family.name 與 app_name 刻意分開：Hub 裡顯示「Routina Flow」，
-          桌面圖示的名稱之後再改，兩件事互不牽動。
+          family.name 與 app_name 是分開的兩件事：即使日後改了 app_name 或搬套件名，
+          這支 App 在家族裡的顯示名稱都不受影響。
           鍵名的定義見 routina-hub 的 core/contract/Family.kt。
         -->
         <meta-data
