@@ -52,7 +52,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: routina-unsigned-apk
+          name: routina-flow-unsigned-apk
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
@@ -129,8 +129,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/release/app-release.apk "routina-${GITHUB_REF_NAME}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "routina-flow-${GITHUB_REF_NAME}.apk"
           gh release create "$GITHUB_REF_NAME" \
-            "routina-${GITHUB_REF_NAME}.apk" \
-            --title "Routina ${GITHUB_REF_NAME}" \
+            "routina-flow-${GITHUB_REF_NAME}.apk" \
+            --title "Routina Flow ${GITHUB_REF_NAME}" \
             --generate-notes
