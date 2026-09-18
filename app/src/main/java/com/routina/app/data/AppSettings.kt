@@ -67,11 +67,17 @@ object AppSettings {
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    // 寫入失敗不該讓 App 掛掉——偏好設定壞了頂多是回到預設值
+    // 用 commit() 同步寫，不用 apply()：偏好是使用者點一下就改一項，改完可能馬上切走、
+    // 被系統收掉或裝新版（apply 的非同步寫入曾經就這樣掉過一次）。檔案只有三個鍵，
+    // 主執行緒同步寫的代價可以忽略。寫入失敗不該讓 App 掛掉——頂多是回到預設值。
     private inline fun edit(
         context: Context,
         crossinline block: android.content.SharedPreferences.Editor.() -> Unit
     ) {
-        runCatching { prefs(context).edit().apply { block() }.apply() }
+        runCatching {
+            val editor = prefs(context).edit()
+            editor.block()
+            editor.commit()
+        }
     }
 }
