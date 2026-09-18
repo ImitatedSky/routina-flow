@@ -6,6 +6,8 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import com.routina.app.data.AppSettings
+import com.routina.app.data.ThemeMode
 
 private val LightColors = lightColorScheme(
     primary = RoutinaColors.TriggerTime,
@@ -43,11 +45,19 @@ private val DarkColors = darkColorScheme(
 
 @Composable
 fun RoutinaTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = isDarkTheme(),
     content: @Composable () -> Unit
 ) {
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
         content = content
     )
+}
+
+/** 設定畫面選的外觀模式優先；沒特別選（跟隨系統）才看系統深色設定 */
+@Composable
+private fun isDarkTheme(): Boolean = when (AppSettings.themeMode) {
+    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
 }

@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.routina.app.data.AppSettings
 import com.routina.app.model.RunLog
 import com.routina.app.ui.theme.RoutinaColors
 import java.text.SimpleDateFormat
@@ -80,7 +81,7 @@ fun LogScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    "還沒有執行紀錄。\n例行程序執行後會顯示在這裡（保留最近 50 筆）。",
+                    "還沒有執行紀錄。\n例行程序執行後會顯示在這裡（保留最近 ${AppSettings.logLimit} 筆）。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

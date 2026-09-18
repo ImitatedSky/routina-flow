@@ -1,17 +1,5 @@
 package com.routina.app.ui
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import com.routina.app.data.RoutineBackup
-import com.routina.app.data.RoutineBackupIo
 import android.Manifest
 import android.content.ComponentName
 import android.content.Context
@@ -22,21 +10,6 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -45,21 +18,41 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
@@ -67,9 +60,11 @@ import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -86,6 +81,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -129,11 +125,11 @@ import com.routina.app.model.isLocation
 import com.routina.app.ui.theme.actionColor
 import com.routina.app.ui.theme.blockContentColor
 import com.routina.app.ui.theme.routineAccent
+import kotlin.math.absoluteValue
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyGridState
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import kotlin.math.absoluteValue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -144,7 +140,8 @@ fun HomeScreen(
     onEdit: (String) -> Unit,
     onOpenLogs: () -> Unit,
     onOpenNfc: () -> Unit,
-    onOpenGlobals: () -> Unit
+    onOpenGlobals: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val routines by viewModel.routines.collectAsState()
@@ -158,32 +155,10 @@ fun HomeScreen(
     // 首頁呈現方式（清單／格狀），持久化於 SharedPreferences，重開 App 保留
     var viewMode by remember { mutableStateOf(loadHomeViewMode(context)) }
 
-    // 匯出／匯入：檔案位置一律交給系統檔案選擇器（SAF），App 不碰共用儲存空間、不需要儲存權限
-    var menuOpen by remember { mutableStateOf(false) }
-    // 讀完備份檔先停在這裡，等使用者挑完要匯入哪幾支才真的寫進去
-    var pendingImport by remember { mutableStateOf<RoutineBackup?>(null) }
     // 非 null＝正在確認刪除哪一支（從編輯模式的角標點進來）
     var deleteTarget by remember { mutableStateOf<Routine?>(null) }
     val notify: (String) -> Unit = { message ->
         scope.launch { snackbarHostState.showSnackbar(message) }
-    }
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        RoutineBackupIo.write(context, uri, routines).fold(
-            onSuccess = { notify("已匯出 $it 支例行程序") },
-            onFailure = { notify(it.message ?: "匯出失敗") }
-        )
-    }
-    val importLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        RoutineBackupIo.read(context, uri).fold(
-            onSuccess = { pendingImport = it },
-            onFailure = { notify(it.message ?: "匯入失敗") }
-        )
     }
 
     // 權限狀態：從系統設定頁返回時（ON_RESUME）重新檢查，授權完成後引導卡要立即消失
@@ -343,33 +318,9 @@ fun HomeScreen(
                     IconButton(onClick = onOpenLogs) {
                         Icon(Icons.Filled.History, contentDescription = "執行紀錄")
                     }
-                    // 備份類操作不常用，收進溢位選單，標題列留給每天會點的功能
-                    Box {
-                        IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "更多")
-                        }
-                        DropdownMenu(
-                            expanded = menuOpen,
-                            onDismissRequest = { menuOpen = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("匯出備份") },
-                                enabled = routines.isNotEmpty(),
-                                onClick = {
-                                    menuOpen = false
-                                    exportLauncher.launch(RoutineBackupIo.suggestedFileName())
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("匯入備份") },
-                                onClick = {
-                                    menuOpen = false
-                                    // 備份檔的 MIME 由各家檔案 App 自行決定（json/octet-stream/text 都有），
-                                    // 收窄反而會讓使用者在選擇器裡看不到自己的檔案，因此不過濾
-                                    importLauncher.launch(arrayOf("*/*"))
-                                }
-                            )
-                        }
+                    // 備份與偏好都收進設定畫面，標題列留給每天會點的功能
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Filled.Settings, contentDescription = "設定")
                     }
                 }
             )
@@ -652,17 +603,6 @@ fun HomeScreen(
         )
     }
 
-    pendingImport?.let { backup ->
-        ImportPickerDialog(
-            backup = backup,
-            onDismiss = { pendingImport = null },
-            onConfirm = { picked ->
-                pendingImport = null
-                applyImport(context, picked)
-                notify("已匯入 ${picked.size} 支例行程序")
-            }
-        )
-    }
 }
 
 /** FAB 帶出的範本選擇 sheet：「從範本建立 / 空白建立」一鍵可達 */

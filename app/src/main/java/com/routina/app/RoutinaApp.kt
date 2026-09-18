@@ -4,11 +4,14 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import com.routina.app.data.AppSettings
 
 class RoutinaApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // 偏好設定在這裡載入：主畫面、背景元件、小工具設定頁都會讀到同一份
+        AppSettings.load(this)
         createNotificationChannels(this)
     }
 
