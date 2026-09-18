@@ -51,6 +51,7 @@ import com.routina.app.data.RoutineBackup
 import com.routina.app.data.RoutineBackupIo
 import com.routina.app.data.RoutineRepository
 import com.routina.app.data.ThemeMode
+import com.routina.app.engine.NfcDispatch
 import kotlinx.coroutines.launch
 
 /**
@@ -148,6 +149,18 @@ fun SettingsScreen(
                 )
             }
 
+            SettingsSection("NFC") {
+                SwitchRow(
+                    title = "回應 NFC 標籤",
+                    description = "關掉之後，碰到標籤 Routina 不會被叫起來、NFC 觸發的程序也不會執行，" +
+                        "也不再出現在「用哪個 App 開啟」的選擇器裡。" +
+                        "系統的 NFC 開關不動，其他 App 照用；標籤庫的掃描與寫入標籤也照舊" +
+                        "（那是畫面在前景時自己讀的）。",
+                    checked = NfcDispatch.enabled,
+                    onCheckedChange = { NfcDispatch.setEnabled(context, it) }
+                )
+            }
+
             SettingsSection("執行紀錄") {
                 SettingRow(
                     title = "保留筆數",
@@ -209,7 +222,8 @@ fun SettingsScreen(
                     body = "不需要，也做不到。Routina 的 NFC 觸發是靠系統的標籤派送：" +
                         "手機碰到已登錄的標籤時，系統直接叫起對應的程序，" +
                         "Routina 平常不必在背景跑任何東西。" +
-                        "（App 自己主動讀取標籤的「讀取模式」必須有畫面在前景，那才需要常駐。）"
+                        "（App 自己主動讀取標籤的「讀取模式」必須有畫面在前景，那才需要常駐。）" +
+                        "不想讓 Routina 回應標籤時，用上面的「回應 NFC 標籤」關掉就好。"
                 )
                 RowDivider()
                 InfoRow(

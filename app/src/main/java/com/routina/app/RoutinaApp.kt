@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import com.routina.app.data.AppSettings
+import com.routina.app.engine.NfcDispatch
 
 class RoutinaApp : Application() {
 
@@ -12,6 +13,8 @@ class RoutinaApp : Application() {
         super.onCreate()
         // 偏好設定在這裡載入：主畫面、背景元件、小工具設定頁都會讀到同一份
         AppSettings.load(this)
+        // NFC 派送的開關存在系統的元件狀態裡，開機後讀一次真實值
+        NfcDispatch.load(this)
         createNotificationChannels(this)
     }
 
