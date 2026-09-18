@@ -107,6 +107,26 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Routina">
 
+        <!--
+          家族標記：讓 Routina（Hub）掃得到這支 App、列進家族目錄。
+          純宣告，不影響任何現有功能，也不需要新權限。
+          family.name 與 app_name 刻意分開：Hub 裡顯示「Routina Flow」，
+          桌面圖示的名稱之後再改，兩件事互不牽動。
+          鍵名的定義見 routina-hub 的 core/contract/Family.kt。
+        -->
+        <meta-data
+            android:name="com.routina.family.member"
+            android:value="true" />
+        <meta-data
+            android:name="com.routina.family.id"
+            android:value="flow" />
+        <meta-data
+            android:name="com.routina.family.name"
+            android:value="Routina Flow" />
+        <meta-data
+            android:name="com.routina.family.summary"
+            android:value="日常自動化" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
