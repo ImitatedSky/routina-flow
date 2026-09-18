@@ -1,10 +1,5 @@
 package com.routina.app.ui
 
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import com.routina.app.data.RoutineBackup
-import com.routina.app.data.RoutineBackupIo
 import android.Manifest
 import android.content.ComponentName
 import android.content.Context
@@ -15,20 +10,6 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -37,21 +18,41 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
@@ -59,9 +60,11 @@ import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -78,6 +81,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -121,11 +125,11 @@ import com.routina.app.model.isLocation
 import com.routina.app.ui.theme.actionColor
 import com.routina.app.ui.theme.blockContentColor
 import com.routina.app.ui.theme.routineAccent
+import kotlin.math.absoluteValue
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyGridState
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import kotlin.math.absoluteValue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -136,7 +140,8 @@ fun HomeScreen(
     onEdit: (String) -> Unit,
     onOpenLogs: () -> Unit,
     onOpenNfc: () -> Unit,
-    onOpenGlobals: () -> Unit
+    onOpenGlobals: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val routines by viewModel.routines.collectAsState()
@@ -150,30 +155,10 @@ fun HomeScreen(
     // 首頁呈現方式（清單／格狀），持久化於 SharedPreferences，重開 App 保留
     var viewMode by remember { mutableStateOf(loadHomeViewMode(context)) }
 
-    // 匯出／匯入：檔案位置一律交給系統檔案選擇器（SAF），App 不碰共用儲存空間、不需要儲存權限
-    var menuOpen by remember { mutableStateOf(false) }
-    // 讀完備份檔先停在這裡，等使用者挑完要匯入哪幾支才真的寫進去
-    var pendingImport by remember { mutableStateOf<RoutineBackup?>(null) }
+    // 非 null＝正在確認刪除哪一支（從編輯模式的角標點進來）
+    var deleteTarget by remember { mutableStateOf<Routine?>(null) }
     val notify: (String) -> Unit = { message ->
         scope.launch { snackbarHostState.showSnackbar(message) }
-    }
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        RoutineBackupIo.write(context, uri, routines).fold(
-            onSuccess = { notify("已匯出 $it 支例行程序") },
-            onFailure = { notify(it.message ?: "匯出失敗") }
-        )
-    }
-    val importLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        RoutineBackupIo.read(context, uri).fold(
-            onSuccess = { pendingImport = it },
-            onFailure = { notify(it.message ?: "匯入失敗") }
-        )
     }
 
     // 權限狀態：從系統設定頁返回時（ON_RESUME）重新檢查，授權完成後引導卡要立即消失
@@ -333,33 +318,9 @@ fun HomeScreen(
                     IconButton(onClick = onOpenLogs) {
                         Icon(Icons.Filled.History, contentDescription = "執行紀錄")
                     }
-                    // 備份類操作不常用，收進溢位選單，標題列留給每天會點的功能
-                    Box {
-                        IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "更多")
-                        }
-                        DropdownMenu(
-                            expanded = menuOpen,
-                            onDismissRequest = { menuOpen = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("匯出備份") },
-                                enabled = routines.isNotEmpty(),
-                                onClick = {
-                                    menuOpen = false
-                                    exportLauncher.launch(RoutineBackupIo.suggestedFileName())
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("匯入備份") },
-                                onClick = {
-                                    menuOpen = false
-                                    // 備份檔的 MIME 由各家檔案 App 自行決定（json/octet-stream/text 都有），
-                                    // 收窄反而會讓使用者在選擇器裡看不到自己的檔案，因此不過濾
-                                    importLauncher.launch(arrayOf("*/*"))
-                                }
-                            )
-                        }
+                    // 備份與偏好都收進設定畫面，標題列留給每天會點的功能
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Filled.Settings, contentDescription = "設定")
                     }
                 }
             )
@@ -588,6 +549,7 @@ fun HomeScreen(
                         onEdit = onEdit,
                         onToggle = { id, enabled -> viewModel.setEnabled(id, enabled) },
                         onRunNow = runNow,
+                        onDelete = { deleteTarget = it },
                         modifier = Modifier.weight(1f)
                     )
 
@@ -599,6 +561,7 @@ fun HomeScreen(
                         onEdit = onEdit,
                         onToggle = { id, enabled -> viewModel.setEnabled(id, enabled) },
                         onRunNow = runNow,
+                        onDelete = { deleteTarget = it },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -621,17 +584,25 @@ fun HomeScreen(
         )
     }
 
-    pendingImport?.let { backup ->
-        ImportPickerDialog(
-            backup = backup,
-            onDismiss = { pendingImport = null },
-            onConfirm = { picked ->
-                pendingImport = null
-                applyImport(context, picked)
-                notify("已匯入 ${picked.size} 支例行程序")
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("刪除例行程序") },
+            text = { Text("確定要刪除「${target.name.ifBlank { "未命名" }}」嗎？此操作無法復原。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.delete(target.id)
+                    deleteTarget = null
+                }) {
+                    Text("刪除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("取消") }
             }
         )
     }
+
 }
 
 /** FAB 帶出的範本選擇 sheet：「從範本建立 / 空白建立」一鍵可達 */
@@ -954,9 +925,12 @@ private fun RoutineListView(
     onEdit: (String) -> Unit,
     onToggle: (String, Boolean) -> Unit,
     onRunNow: (Routine) -> Unit,
+    onDelete: (Routine) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
+    // 編輯模式:與格狀一致——長按拿起即進入,點空白處才結束。刪除角標只在這個模式出現
+    var editMode by remember { mutableStateOf(false) }
     // 本地順序鏡像：拖曳期間即時重排讓動畫流暢，放開才落地
     var ordered by remember { mutableStateOf(items) }
     LaunchedEffect(items) { ordered = items }
@@ -969,7 +943,14 @@ private fun RoutineListView(
 
     LazyColumn(
         state = lazyListState,
-        modifier = modifier,
+        // 編輯模式下點列以外的空白處即結束(與格狀一致)
+        modifier = modifier.then(
+            if (editMode) {
+                Modifier.pointerInput(Unit) { detectTapGestures { editMode = false } }
+            } else {
+                Modifier
+            }
+        ),
         contentPadding = PaddingValues(12.dp, 6.dp, 12.dp, 96.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -981,12 +962,12 @@ private fun RoutineListView(
                     sunLocation = sunLocation,
                     permIssues = missingPermissions(routine, permSnapshot),
                     isDragging = isDragging,
-                    // 長按整卡拿起排序；tap＝進入編輯，兩手勢不衝突
-                    modifier = Modifier.longPressDraggableHandle(
+                    // 握把必須掛在卡片的點擊手勢「內側」才收得到事件（見 RoutineListRow 註解）
+                    dragHandle = Modifier.longPressDraggableHandle(
                         enabled = reorderEnabled,
-                        onDragStarted = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        },
+                        // 震動與進入編輯模式都由 onLongPress 負責（原地長按也要生效），
+                        // 這裡只補上「直接拖走、沒觸發到長按回呼」的情況
+                        onDragStarted = { editMode = true },
                         onDragStopped = {
                             val fromIdx = items.indexOfFirst { it.id == routine.id }
                             val toIdx = ordered.indexOfFirst { it.id == routine.id }
@@ -996,8 +977,14 @@ private fun RoutineListView(
                         }
                     ),
                     onClick = { onEdit(routine.id) },
+                    onLongPress = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        editMode = true
+                    },
                     onToggle = { onToggle(routine.id, it) },
-                    onRunNow = { onRunNow(routine) }
+                    onRunNow = { onRunNow(routine) },
+                    showDelete = editMode && !isDragging,
+                    onDelete = { onDelete(routine) }
                 )
             }
         }
@@ -1014,17 +1001,26 @@ private fun RoutineListRow(
     permIssues: List<PermIssue>,
     isDragging: Boolean,
     modifier: Modifier = Modifier,
+    dragHandle: Modifier = Modifier,
     onClick: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
     onToggle: (Boolean) -> Unit,
-    onRunNow: () -> Unit
+    onRunNow: () -> Unit,
+    showDelete: Boolean = false,
+    onDelete: (() -> Unit)? = null
 ) {
     val accent = routineAccent(routine)
     // 靜止不給陰影：填色、外框、陰影三選一，這裡用容器色分層即可。陰影只留給「被拿起來」的那一張
     val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp, label = "listRowElevation")
 
+    Box(modifier = modifier.fillMaxWidth()) {
     Card(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
+        // 同格狀：原地長按進編輯模式，所以點擊改用 combinedClickable 自己掛，
+        // 排序握把接在它後面（＝內側）才拿得到事件
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onClick, onLongClick = onLongPress)
+            .then(dragHandle),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = elevation)
@@ -1034,13 +1030,20 @@ private fun RoutineListRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // 觸發家族色塊：清單模式也保有顏色分隔
-            Box(
-                modifier = Modifier
-                    .size(14.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(accent.copy(alpha = if (routine.enabled) 1f else 0.4f))
-            )
+            // 最左邊這格平常是觸發家族色塊（清單模式也保有顏色分隔）,
+            // 編輯模式直接換成刪除鈕——不另外挪出槽位,列高與其他內容都不會跳動
+            if (onDelete != null && showDelete) {
+                Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                    DeleteBadge(routineName = routine.name, onDelete = onDelete)
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(14.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(accent.copy(alpha = if (routine.enabled) 1f else 0.4f))
+                )
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     routine.name.ifBlank { "(未命名)" },
@@ -1082,6 +1085,8 @@ private fun RoutineListRow(
             }
         }
     }
+
+    }
 }
 
 /** 格狀模式：2 欄方塊卡概覽（色塊 + 名稱 + 一行狀態 + 執行／開關），為概覽故不排序 */
@@ -1094,6 +1099,7 @@ private fun RoutineGridView(
     onEdit: (String) -> Unit,
     onToggle: (String, Boolean) -> Unit,
     onRunNow: (Routine) -> Unit,
+    onDelete: (Routine) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
@@ -1132,13 +1138,12 @@ private fun RoutineGridView(
                     // 拿起的那塊放大浮起、其餘方塊抖動
                     jiggling = editMode && !isDragging,
                     dragging = isDragging,
-                    // 長按整塊拿起排序;放開後仍維持抖動(編輯模式),點空白處才結束
-                    modifier = Modifier.longPressDraggableHandle(
+                    // 握把必須掛在方塊的點擊手勢「內側」才收得到事件（見 RoutineGridCell 註解）
+                    dragHandle = Modifier.longPressDraggableHandle(
                         enabled = reorderEnabled,
-                        onDragStarted = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            editMode = true
-                        },
+                        // 震動與進入編輯模式都由 onLongPress 負責（原地長按也要生效），
+                        // 這裡只補上「直接拖走、沒觸發到長按回呼」的情況
+                        onDragStarted = { editMode = true },
                         onDragStopped = {
                             val fromIdx = items.indexOfFirst { it.id == routine.id }
                             val toIdx = ordered.indexOfFirst { it.id == routine.id }
@@ -1148,8 +1153,13 @@ private fun RoutineGridView(
                         }
                     ),
                     onClick = { onEdit(routine.id) },
+                    onLongPress = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        editMode = true
+                    },
                     onToggle = { onToggle(routine.id, it) },
-                    onRunNow = { onRunNow(routine) }
+                    onRunNow = { onRunNow(routine) },
+                    onDelete = { onDelete(routine) }
                 )
             }
         }
@@ -1167,11 +1177,14 @@ private fun RoutineGridCell(
     routine: Routine,
     sunLocation: AlarmScheduler.SunLocation?,
     onClick: () -> Unit,
+    onLongPress: (() -> Unit)?,
     onToggle: (Boolean) -> Unit,
     onRunNow: () -> Unit,
     modifier: Modifier = Modifier,
+    dragHandle: Modifier = Modifier,
     jiggling: Boolean = false,
-    dragging: Boolean = false
+    dragging: Boolean = false,
+    onDelete: (() -> Unit)? = null
 ) {
     val enabled = routine.enabled
     val accent = routineAccent(routine)
@@ -1203,16 +1216,22 @@ private fun RoutineGridCell(
     // 被拿起那塊:放大浮起（不抖）
     val scale by animateFloatAsState(if (dragging) 1.06f else 1f, label = "gridDragScale")
 
+    Box(modifier = modifier.fillMaxWidth()) {
     Card(
-        onClick = onClick,
-        modifier = modifier
+        // 用 combinedClickable 而不是 Card(onClick=)：原地長按（沒有位移）也要能進編輯模式，
+        // 排序用的 longPressDraggableHandle 只在手指移動超過門檻後才會起手。
+        // 注意順序：同一條 modifier 鏈上，越後面的手勢節點越先收到事件，
+        // 所以握把要接在 combinedClickable 後面——不然長按會先被點擊手勢吃掉、拖不動。
+        modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
             .graphicsLayer {
                 rotationZ = wiggle.value
                 scaleX = scale
                 scaleY = scale
-            },
+            }
+            .combinedClickable(onClick = onClick, onLongClick = onLongPress)
+            .then(dragHandle),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = container),
         elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 10.dp else 0.dp)
@@ -1274,6 +1293,65 @@ private fun RoutineGridCell(
                 routine.actions.take(4).forEach { action ->
                     ThinLine(actionColor(action), indent = 20.dp, widthFraction = 0.5f)
                 }
+            }
+        }
+    }
+
+        // iOS 式刪除角標:只在編輯模式出現。一般瀏覽時畫面上沒有任何刪除鈕,
+        // 要刪得先長按進編輯模式,點了角標還要過確認——兩道手續,和原本
+        // 「刪除收進溢位選單以杜絕誤觸」的保護強度相當,只是路徑短一截。
+        if (onDelete != null && jiggling) {
+            DeleteBadge(
+                routineName = routine.name,
+                onDelete = onDelete,
+                // 掛在卡片左上角外側,只壓到圓角、不遮住觸發圖示
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = (-10).dp, y = (-10).dp)
+            )
+        }
+    }
+}
+
+/**
+ * 編輯模式的刪除角標:紅圓 ✕ 外加一圈底色,讓它在任何顏色的方塊上都看得見。
+ * 觸控目標放大到 40dp,可見的圓只有 26dp。
+ */
+@Composable
+private fun DeleteBadge(
+    routineName: String,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        // requiredSize：無視外層給的寬高,讓 40dp 觸控目標可以溢出小槽位（清單那格只有 20dp）
+        modifier = modifier
+            .requiredSize(40.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onDelete),
+        contentAlignment = Alignment.Center
+    ) {
+        // 外圈底色 + 內圈紅底兩層畫:用 border 描邊會在紅底邊緣留下一圈毛邊
+        Box(
+            modifier = Modifier
+                .size(26.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surface),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.error),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.Close,
+                    contentDescription = "刪除「${routineName.ifBlank { "未命名" }}」",
+                    tint = MaterialTheme.colorScheme.onError,
+                    modifier = Modifier.size(14.dp)
+                )
             }
         }
     }

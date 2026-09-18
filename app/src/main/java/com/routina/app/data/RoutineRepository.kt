@@ -129,12 +129,20 @@ class RoutineRepository private constructor(context: Context) {
     // ---------- 執行紀錄 ----------
 
     fun addLog(log: RunLog) {
-        _logs.value = (listOf(log) + _logs.value).take(MAX_LOGS)
+        _logs.value = (listOf(log) + _logs.value).take(AppSettings.logLimit)
         persistLogs()
     }
 
     fun clearLogs() {
         _logs.value = emptyList()
+        persistLogs()
+    }
+
+    /** 設定把保留筆數調小後呼叫：立刻裁掉多出來的舊紀錄，不必等下一次執行 */
+    fun trimLogs() {
+        val limit = AppSettings.logLimit
+        if (_logs.value.size <= limit) return
+        _logs.value = _logs.value.take(limit)
         persistLogs()
     }
 
@@ -239,7 +247,7 @@ class RoutineRepository private constructor(context: Context) {
      * 需要在返回前確保資料已落地。
      */
     fun addLogBlocking(log: RunLog) {
-        _logs.value = (listOf(log) + _logs.value).take(MAX_LOGS)
+        _logs.value = (listOf(log) + _logs.value).take(AppSettings.logLimit)
         runBlocking {
             writeMutex.withLock { writeAtomically(logsFile, encodeLogs(_logs.value)) }
         }
@@ -264,7 +272,6 @@ class RoutineRepository private constructor(context: Context) {
         private const val FILE_LOGS = "logs.json"
         private const val FILE_NFC = "nfc_tags.json"
         private const val FILE_GLOBALS = "global_vars.json"
-        private const val MAX_LOGS = 50
 
         @Volatile
         private var instance: RoutineRepository? = null

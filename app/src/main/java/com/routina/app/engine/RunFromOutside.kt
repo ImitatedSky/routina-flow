@@ -6,6 +6,7 @@ import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import com.routina.app.R
+import com.routina.app.data.AppSettings
 import com.routina.app.data.RoutineRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,7 +69,10 @@ object RunFromOutside {
             toast(appContext, MSG_MISSING)
             return
         }
-        toast(appContext, "執行：${routine.name.ifBlank { "未命名" }}")
+        // 成功提示可在設定關掉；錯誤提示不受影響——那是使用者需要知道的事
+        if (AppSettings.runToast) {
+            toast(appContext, "執行：${routine.name.ifBlank { "未命名" }}")
+        }
         scope.launch {
             runCatching { RoutineManager.runNow(appContext, routineId) }
         }

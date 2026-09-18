@@ -22,6 +22,7 @@ import com.routina.app.ui.HomeScreen
 import com.routina.app.ui.LogScreen
 import com.routina.app.ui.NfcLibraryScreen
 import com.routina.app.ui.RoutineViewModel
+import com.routina.app.ui.SettingsScreen
 import com.routina.app.ui.theme.RoutinaTheme
 
 class MainActivity : ComponentActivity() {
@@ -47,6 +48,7 @@ private object Routes {
     const val LOGS = "logs"
     const val NFC = "nfc"
     const val GLOBALS = "globals"
+    const val SETTINGS = "settings"
 
     // 新建：可選帶入範本 id（?template=...）；不帶＝空白新建
     const val EDIT_NEW = "edit?template={templateId}"
@@ -81,7 +83,8 @@ private fun RoutinaNavHost() {
                 onEdit = { id -> navController.navigate(Routes.edit(id)) },
                 onOpenLogs = { navController.navigate(Routes.LOGS) },
                 onOpenNfc = { navController.navigate(Routes.NFC) },
-                onOpenGlobals = { navController.navigate(Routes.GLOBALS) }
+                onOpenGlobals = { navController.navigate(Routes.GLOBALS) },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) }
             )
         }
 
@@ -116,6 +119,13 @@ private fun RoutinaNavHost() {
 
         composable(Routes.LOGS) {
             LogScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.SETTINGS) {
+            SettingsScreen(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() }
             )
