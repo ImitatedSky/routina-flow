@@ -1615,6 +1615,10 @@ private fun NfcTagDialog(
     var enabled by remember { mutableStateOf(NfcTagReader.isEnabled(context)) }
     var showWrite by remember { mutableStateOf(false) }
 
+    // 掃到的這張卡系統會不會派送給我們。false＝登錄得起來但永遠不會觸發（信用卡這類），
+    // 要當場講，不然使用者會以為設定好了
+    var cannotAutoTrigger by remember { mutableStateOf(false) }
+
     // rememberUpdatedState：reader mode 註冊一次就好，但回呼必須看得到最新的 trigger，
     // 否則掃描前輸入的標籤名稱會被舊值蓋掉
     val handleUid by rememberUpdatedState(
@@ -1625,7 +1629,12 @@ private fun NfcTagDialog(
         activity = activity,
         active = !showWrite,
         onNfcEnabledChange = { enabled = it }
-    ) { NfcTagReader.enableReaderMode(it) { uid -> handleUid(uid) } }
+    ) {
+        NfcTagReader.enableReaderMode(it) { uid, triggerable ->
+            cannotAutoTrigger = !triggerable
+            handleUid(uid)
+        }
+    }
 
     if (showWrite) {
         NfcWriteDialog(
@@ -1665,10 +1674,22 @@ private fun NfcTagDialog(
                         style = MaterialTheme.typography.bodyMedium
                     )
 
-                    else -> Text(
-                        "已讀到標籤：${trigger.uid}",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    else -> {
+                        Text(
+                            "已讀到標籤：${trigger.uid}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        if (cannotAutoTrigger) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "這張卡（信用卡、金融卡這類）靠上手機時，系統不會把它交給 " +
+                                    "Routina，所以登錄了也不會觸發。Routina 刻意不接收這類卡片，" +
+                                    "否則會把卡從其他 App 手上搶走。請改用一般的 NFC 標籤。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
                 }
 
                 Spacer(Modifier.height(12.dp))

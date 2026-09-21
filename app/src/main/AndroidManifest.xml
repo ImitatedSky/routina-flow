@@ -146,8 +146,8 @@
           這個 Activity 用全透明主題、讀完 UID 就 finish()，使用者只會看到動作被執行，
           不會看到任何畫面（noHistory + excludeFromRecents 確保不留在返回堆疊與最近使用）。
 
-          TECH_DISCOVERED 是主要路徑（涵蓋所有標籤，且只在沒有 App 處理 NDEF 時才派送，
-          不會搶走其他 App 的標籤）；NDEF_DISCOVERED 為備援，讓已寫入 NDEF 內容的標籤
+          TECH_DISCOVERED 是主要路徑（沒有 App 處理 NDEF 時才派送到這一層；
+          收哪些技術見 @xml/nfc_tech_filter——刻意不收信用卡那類卡片）；NDEF_DISCOVERED 為備援，讓已寫入 NDEF 內容的標籤
           也能當觸發器用。
         -->
         <activity

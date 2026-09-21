@@ -1,16 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  ACTION_TECH_DISCOVERED 的技術清單。
-  每個 <tech-list> 是一組 AND 條件，多組之間是 OR：這裡分成四組單一技術，
-  等於「NfcA / NfcB / NfcF / NfcV 任一種都接收」，涵蓋市面上的一般標籤
-  （我們只讀硬體 UID，不需要更上層的協定支援）。
+  ACTION_TECH_DISCOVERED 的技術清單。每個 <tech-list> 是一組 AND 條件，多組之間是 OR。
+
+  這裡刻意**不收**裸的 NfcA / NfcB。那兩個等於「所有 ISO 14443 卡片」——信用卡、
+  金融卡、悠遊卡、門禁卡全都符合。信用卡沒有 NDEF 內容，派送時會直接落到 TECH 這一層，
+  Routina 一收就等於把卡從其他 App（銀行 App、讀卡工具）手上搶走，只換來一則
+  「還沒登錄」。所以改成只收「真的是標籤」的技術：NDEF 標籤、NTAG / MIFARE 系列，
+  以及 FeliCa（NfcF）與 ISO 15693（NfcV）這兩種不用於感應支付的標籤。
+
+  代價：少數手機的 NFC 晶片不回報 MifareClassic，那類卡片只會是 NfcA，於是不再能自動
+  觸發。登錄畫面會在掃到這種卡時當場說明（見 NfcTagReader.canAutoTrigger）。
+  清單若要改，NfcTagReader.AUTO_TRIGGER_TECHS 必須一起改。
 -->
 <resources xmlns:android="http://schemas.android.com/apk/res/android">
     <tech-list>
-        <tech>android.nfc.tech.NfcA</tech>
+        <tech>android.nfc.tech.Ndef</tech>
     </tech-list>
     <tech-list>
-        <tech>android.nfc.tech.NfcB</tech>
+        <tech>android.nfc.tech.NdefFormatable</tech>
+    </tech-list>
+    <tech-list>
+        <tech>android.nfc.tech.MifareUltralight</tech>
+    </tech-list>
+    <tech-list>
+        <tech>android.nfc.tech.MifareClassic</tech>
     </tech-list>
     <tech-list>
         <tech>android.nfc.tech.NfcF</tech>

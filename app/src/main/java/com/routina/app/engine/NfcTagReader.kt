@@ -45,16 +45,35 @@ object NfcTagReader {
         NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS
 
     /**
-     * 掃描登錄用：跳過 NDEF 檢查，讓「只要 UID」的讀取快一點
-     * （也避免碰到損壞的 NDEF 內容而失敗）。
+     * 寫入與掃描登錄用：**不能**跳過 NDEF 檢查。
+     *
+     * 寫入是因為系統得先做完 NDEF 檢查，[Ndef.get] / [NdefFormatable.get] 才拿得到
+     * 對應的 tech 物件；登錄則是因為跳過檢查後 [Tag.getTechList] 不會列出 Ndef /
+     * NdefFormatable，[canAutoTrigger] 會把「其實觸發得了」的標籤誤判成不能觸發。
      */
-    private const val SCAN_FLAGS = BASE_READER_FLAGS or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK
+    private const val READER_FLAGS = BASE_READER_FLAGS
 
     /**
-     * 寫入用：**不能**跳過 NDEF 檢查——系統得先做完 NDEF 檢查，
-     * [Ndef.get] / [NdefFormatable.get] 才拿得到對應的 tech 物件。
+     * manifest 的 TECH_DISCOVERED 會收哪些技術（與 `res/xml/nfc_tech_filter.xml` 同一份清單，
+     * 改一邊就要改另一邊）。裸的 NfcA / NfcB 不收——那等於連信用卡都收，見該檔註解。
      */
-    private const val WRITE_FLAGS = BASE_READER_FLAGS
+    private val AUTO_TRIGGER_TECHS = setOf(
+        "android.nfc.tech.Ndef",
+        "android.nfc.tech.NdefFormatable",
+        "android.nfc.tech.MifareUltralight",
+        "android.nfc.tech.MifareClassic",
+        "android.nfc.tech.NfcF",
+        "android.nfc.tech.NfcV"
+    )
+
+    /**
+     * 這張卡靠上來時，系統會不會把它派送給 Routina。
+     *
+     * false＝登錄得起來（我們照樣讀得到 UID），但之後靠上去不會觸發任何程序。
+     * 信用卡、金融卡這類只有 IsoDep 的卡片就是這一種，登錄畫面要當場講明白，
+     * 否則使用者會以為設好了、實際上永遠不會動。
+     */
+    fun canAutoTrigger(tag: Tag): Boolean = tag.techList.any { it in AUTO_TRIGGER_TECHS }
 
     /** 裝置是否有 NFC 硬體。沒有時調色盤把 NFC 積木標示為不可用（沿用無 GMS 的做法）。 */
     fun isAvailable(context: Context): Boolean = adapter(context) != null
@@ -68,9 +87,13 @@ object NfcTagReader {
      *
      * @return 是否成功啟用
      */
-    fun enableReaderMode(activity: Activity, onTag: (String) -> Unit): Boolean =
-        enable(activity, SCAN_FLAGS) { tag ->
-            uidOf(tag)?.let { uid -> onMain { onTag(uid) } }
+    fun enableReaderMode(
+        activity: Activity,
+        onTag: (uid: String, canAutoTrigger: Boolean) -> Unit
+    ): Boolean =
+        enable(activity, READER_FLAGS) { tag ->
+            val triggerable = canAutoTrigger(tag)
+            uidOf(tag)?.let { uid -> onMain { onTag(uid, triggerable) } }
         }
 
     /**
@@ -81,7 +104,7 @@ object NfcTagReader {
      * @return 是否成功啟用
      */
     fun enableWriteMode(activity: Activity, onResult: (WriteOutcome) -> Unit): Boolean =
-        enable(activity, WRITE_FLAGS) { tag ->
+        enable(activity, READER_FLAGS) { tag ->
             // 回呼來自系統的 binder 執行緒——標籤 I/O（connect / write）不能在主執行緒做，
             // 所以就在這裡寫完，只把結果 post 回主執行緒
             val outcome = writeTagUri(tag)
@@ -91,12 +114,12 @@ object NfcTagReader {
     /**
      * 開啟「完整讀取」模式（NFC 標籤庫登錄用）：讀 UID 加整份 NDEF 內容，結果以
      * [ReadResult] 回呼（保證在主執行緒）。與登錄觸發只要 UID 不同，這裡**不能**跳過
-     * NDEF 檢查（用 [WRITE_FLAGS]），否則 [Ndef.get] 拿不到 NDEF。
+     * NDEF 檢查（用 [READER_FLAGS]），否則 [Ndef.get] 拿不到 NDEF。
      *
      * @return 是否成功啟用
      */
     fun enableReadFullMode(activity: Activity, onRead: (ReadResult) -> Unit): Boolean =
-        enable(activity, WRITE_FLAGS) { tag ->
+        enable(activity, READER_FLAGS) { tag ->
             // 標籤 I/O 不能在主執行緒，就在 binder 執行緒讀完，只把結果 post 回主執行緒
             val result = readTag(tag)
             onMain { onRead(result) }
@@ -115,7 +138,7 @@ object NfcTagReader {
         onResult: (WriteOutcome) -> Unit
     ): Boolean {
         val bytes = runCatching { Base64.decode(ndefBase64, Base64.NO_WRAP) }.getOrNull()
-        return enable(activity, WRITE_FLAGS) { tag ->
+        return enable(activity, READER_FLAGS) { tag ->
             val outcome = writeTagMessage(tag, bytes)
             onMain { onResult(outcome) }
         }
