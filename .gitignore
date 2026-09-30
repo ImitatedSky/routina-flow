@@ -35,3 +35,6 @@ Thumbs.db
 
 # Misc
 *.hprof
+
+# junction to .agents (local only)
+/.claude
