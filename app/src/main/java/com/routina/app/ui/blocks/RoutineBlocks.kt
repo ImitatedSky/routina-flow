@@ -78,7 +78,7 @@ import com.routina.app.ui.weekdaysLabel
 import com.routina.app.ui.theme.actionColor
 import com.routina.app.ui.theme.blockContentColor
 import com.routina.app.ui.theme.triggerColor
-import sh.calvin.reorderable.ReorderableScope
+import sh.calvin.reorderable.ReorderableListItemScope
 
 /**
  * 積木的幾何規格。所有積木都是單純的圓角色塊（無拼圖凹凸、無帽子圓弧），
@@ -563,7 +563,7 @@ fun ActionBlock(
     compact: Boolean = false,
     showControls: Boolean = false,
     isDragging: Boolean = false,
-    reorderableScope: ReorderableScope? = null,
+    reorderableScope: ReorderableListItemScope? = null,
     onBodyClick: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null
 ) {
