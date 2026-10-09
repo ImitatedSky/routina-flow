@@ -142,5 +142,5 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     // 動作積木拖曳排序：非 lazy 的 ReorderableColumn，與編輯畫面的可捲動 Column 相容
-    implementation("sh.calvin.reorderable:reorderable:2.5.1")
+    implementation("sh.calvin.reorderable:reorderable:3.1.0")
 }
