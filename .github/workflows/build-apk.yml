@@ -36,7 +36,7 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
           # 這個 action 預設會安裝已被 Google 下架的舊 'tools' 套件，
           # runner 的 cmdline-tools 升級後 sdkmanager 就找不到它而整步失敗。
@@ -82,7 +82,7 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
           # 這個 action 預設會安裝已被 Google 下架的舊 'tools' 套件，
           # runner 的 cmdline-tools 升級後 sdkmanager 就找不到它而整步失敗。
