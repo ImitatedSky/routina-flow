@@ -116,7 +116,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
-    implementation("androidx.navigation:navigation-compose:2.8.5")
+    implementation("androidx.navigation:navigation-compose:2.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     // 備份格式的相容性用單元測試守著：舊備份讀不進來＝使用者的資料救不回來，
