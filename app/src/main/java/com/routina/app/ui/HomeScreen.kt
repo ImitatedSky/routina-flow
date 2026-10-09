@@ -128,6 +128,7 @@ import com.routina.app.ui.theme.routineAccent
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.ScrollMoveMode
 import sh.calvin.reorderable.rememberReorderableLazyGridState
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -1110,7 +1111,11 @@ private fun RoutineGridView(
     LaunchedEffect(items) { ordered = items }
 
     val gridState = rememberLazyGridState()
-    val reorderableState = rememberReorderableLazyGridState(gridState) { from, to ->
+    // 拖到邊緣自動捲動時用插入式移動,與下面 add/removeAt 的重排方式一致
+    val reorderableState = rememberReorderableLazyGridState(
+        gridState,
+        scrollMoveMode = ScrollMoveMode.INSERT
+    ) { from, to ->
         ordered = ordered.toMutableList().apply { add(to.index, removeAt(from.index)) }
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
     }

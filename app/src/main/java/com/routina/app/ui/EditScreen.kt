@@ -583,8 +583,6 @@ fun EditScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(BlockStackSpacing)
                     ) { index, action, isDragging ->
-                        // 捕捉 ReorderableScope；包一層 Column 後 this 會變成 ColumnScope
-                        val reorderScope = this
                         // 區塊的頭尾多留一點空:分組要成立,組內必須比組間近。
                         // 原本每個接縫距離都一樣,間距對「哪幾塊是一組」完全沒有貢獻。
                         val depth = indentLevels.getOrElse(index) { 0 }
@@ -592,28 +590,33 @@ fun EditScreen(
                         val closesGroup = action is Action.EndIf || action is Action.EndWhile ||
                             action is Action.EndRepeat || action is Action.EndForEach ||
                             action is Action.EndOnReply
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    start = (depth * 20).dp,
-                                    top = if (opensGroup) BlockGroupSpacing else 0.dp,
-                                    bottom = if (closesGroup) BlockGroupSpacing else 0.dp
-                                ),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            InsertPoint(onClick = {
-                                insertIndex = index
-                                showActionPalette = true
-                            })
-                            ActionBlock(
-                                action = action,
-                                showControls = true,
-                                isDragging = isDragging,
-                                reorderableScope = reorderScope,
-                                onBodyClick = { editingAction = IndexedAction(index, action) },
-                                onRemove = { removeAction(index) }
-                            )
+                        // ReorderableItem 負責量測位置與拖曳位移，整列（含插入點）都要包在裡面
+                        ReorderableItem {
+                            // 捕捉 ReorderableListItemScope；包一層 Column 後 this 會變成 ColumnScope
+                            val reorderScope = this
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        start = (depth * 20).dp,
+                                        top = if (opensGroup) BlockGroupSpacing else 0.dp,
+                                        bottom = if (closesGroup) BlockGroupSpacing else 0.dp
+                                    ),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                InsertPoint(onClick = {
+                                    insertIndex = index
+                                    showActionPalette = true
+                                })
+                                ActionBlock(
+                                    action = action,
+                                    showControls = true,
+                                    isDragging = isDragging,
+                                    reorderableScope = reorderScope,
+                                    onBodyClick = { editingAction = IndexedAction(index, action) },
+                                    onRemove = { removeAction(index) }
+                                )
+                            }
                         }
                     }
                 }
